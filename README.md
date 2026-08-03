@@ -8,6 +8,7 @@ AI Personal Tutor is a simple monorepo that combines a FastAPI backend with a Ne
 - Uploaded files are stored locally in `backend/uploads`
 
 ## Backend
+- venv activation .\venv\Scripts\Activate.ps1
 - Main entrypoint: `backend/app/main.py`
 - Health routes: `backend/app/api/health.py`
 - Upload route: `backend/app/api/upload.py`
@@ -16,8 +17,12 @@ AI Personal Tutor is a simple monorepo that combines a FastAPI backend with a Ne
 Install and run:
 
 ```bash
+uvicorn app.main:app --reload --port 8000
 python -m pip install -r backend/requirements.txt
 uvicorn app.main:app --reload --port 8000 --app-dir backend/app
+
+python -m pip install -r requirements.txt
+uvicorn app.main:app --reload --port 8000
 ```
 
 Available backend routes:
