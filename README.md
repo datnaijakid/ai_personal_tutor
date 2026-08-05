@@ -1,4 +1,4 @@
-﻿# AI Personal Tutor
+# AI Personal Tutor
 
 AI Personal Tutor is an early-stage web application for uploading a PDF textbook to a local FastAPI service. The current experience is focused on a secure, validated upload flow; it does not yet provide tutoring, PDF reading, accounts, or persistent database storage.
 
@@ -8,7 +8,7 @@ AI Personal Tutor is an early-stage web application for uploading a PDF textbook
 - Client-side checks for the file extension, MIME type, 25 MB size limit, and the PDF `%PDF-` header, so users receive immediate feedback.
 - A FastAPI upload endpoint that repeats all validation. Server validation is authoritative, so a bypassed or modified browser request is still rejected.
 - Clear UI feedback for uploads, validation failures, and server-provided errors.
-- Successful uploads are stored using a generated filename under `backend/uploads/`, alongside a JSON metadata file containing the original filename, stored filename, content type, and size.
+- Successful uploads are stored using a generated filename under `backend/uploads/` and processed into a machine-readable JSON document under `backend/extracted/`. The JSON includes upload metadata, page count, page-numbered extracted text, and overlapping text chunks for downstream processing.
 - A health endpoint for confirming that the API is running.
 
 ## Project structure
@@ -18,7 +18,9 @@ backend/                 FastAPI service
   app/main.py            API application and CORS configuration
   app/api/upload.py      PDF validation and local storage endpoint
   app/api/health.py      Health-check endpoint
-  uploads/               Locally stored uploads and metadata (runtime data)
+  app/services/chunker.py Text chunking for processed PDF pages
+  uploads/               Locally stored original PDF uploads (runtime data)
+  extracted/             Machine-readable extracted PDF text (runtime data)
 frontend/                Next.js application
   app/page.tsx           Home page
   components/PDFUploader.tsx
@@ -58,7 +60,7 @@ To use an API running at a different URL, create `frontend/.env.local`:
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
-`NEXT_PUBLIC_API_URL` is exposed to the browser, so it must only contain a public API URL—never a secret or API key. Restart the Next.js development server after changing it.
+`NEXT_PUBLIC_API_URL` is exposed to the browser, so it must only contain a public API URL; never a secret or API key. Restart the Next.js development server after changing it.
 
 ## Upload rules
 
@@ -92,4 +94,4 @@ npm run lint
 
 - Uploaded files remain on the local filesystem; there is no database, cloud storage, user ownership model, or cleanup job.
 - CORS is configured for the local Next.js origin (`http://localhost:3000`).
-- The application currently ends after a successful upload—tutoring, text extraction, and document management are not implemented yet.
+- Uploaded PDFs are converted to page-numbered JSON text and chunks, but tutoring and document management are not implemented yet.
