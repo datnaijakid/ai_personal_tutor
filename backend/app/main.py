@@ -8,6 +8,7 @@ from app.api.upload import router as upload_router
 app = FastAPI()
 
 
+# Allow the Next.js frontend to communicate with FastAPI
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:3000"],
@@ -17,12 +18,12 @@ app.add_middleware(
 )
 
 
-app.include_router(health_router)
-app.include_router(upload_router)
-
-
 @app.get("/")
 def root():
     return {
-        "message": "AI Educational Tutor API is running"
+        "message": "Backend is running!"
     }
+
+
+app.include_router(health_router)
+app.include_router(upload_router)

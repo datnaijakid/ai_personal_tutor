@@ -1,118 +1,111 @@
 ﻿"use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+
+const MAX_PDF_SIZE_BYTES = 25 * 1024 * 1024;
+const PDF_CONTENT_TYPES = new Set(["application/pdf", "application/x-pdf"]);
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+
+type UploadErrorResponse = {
+  detail?: string;
+};
+
+async function validatePdf(file: File): Promise<string | null> {
+  if (!file.name.toLowerCase().endsWith(".pdf")) return "Only PDF files are allowed.";
+  if (!PDF_CONTENT_TYPES.has(file.type)) return "Only PDF files are allowed.";
+  if (file.size > MAX_PDF_SIZE_BYTES) return "PDF files must be 25 MB or smaller.";
+
+  const header = new Uint8Array(await file.slice(0, 5).arrayBuffer());
+  if (new TextDecoder().decode(header) !== "%PDF-") return "The uploaded file is not a valid PDF.";
+
+  return null;
+}
 
 export default function PDFUploader() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-
-  const [isUploading, setIsUploading] = useState(false);
-
-  const [message, setMessage] = useState("");
-
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [pageCount, setPageCount] = useState<number | null>(null);
+  function clearFile() {
+    setSelectedFile(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  }
 
   async function uploadFile() {
     if (!selectedFile) {
+      setError("Please select a PDF first.");
       return;
     }
 
-    setIsUploading(true);
-    setMessage("");
+    // The backend repeats these checks and remains the source of truth.
+    const validationError = await validatePdf(selectedFile);
+    if (validationError) {
+      setError(validationError);
+      setSuccessMessage("");
+      clearFile();
+      return;
+    }
+
+    setUploading(true);
     setError("");
-    setPageCount(null);
+    setSuccessMessage("");
+    const formData = new FormData();
+    formData.append("file", selectedFile);
 
     try {
-      const formData = new FormData();
-
-      formData.append("file", selectedFile);
-
-      const response = await fetch(
-        "http://localhost:8000/upload",
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
-
-      const data = await response.json();
+      const response = await fetch(`${API_BASE_URL}/upload`, { method: "POST", body: formData });
 
       if (!response.ok) {
-        throw new Error(
-          data.detail || "Upload failed."
-        );
+        const body = (await response.json().catch(() => null)) as UploadErrorResponse | null;
+        throw new Error(body?.detail || "Upload failed. Please try again.");
       }
 
-      setMessage(data.message);
-
-      setPageCount(data.page_count);
-
-      console.log("Upload response:", data);
+      setSuccessMessage("PDF uploaded successfully!");
+      clearFile();
     } catch (error) {
-      if (error instanceof Error) {
-        setError(error.message);
-      } else {
-        setError(
-          "Something went wrong while uploading the PDF."
-        );
-      }
+      console.error(error);
+      setError(error instanceof Error ? error.message : "Upload failed. Please try again.");
     } finally {
-      setIsUploading(false);
+      setUploading(false);
     }
   }
 
   return (
     <div>
       <h2>Upload your textbook</h2>
-
       <input
+        ref={fileInputRef}
         type="file"
-        accept=".pdf,application/pdf"
-        onChange={(event) => {
+        accept=".pdf,application/pdf,application/x-pdf"
+        disabled={uploading}
+        onChange={async (event) => {
           const file = event.target.files?.[0];
+          if (!file) return;
 
-          if (file) {
-            setSelectedFile(file);
-            setMessage("");
-            setError("");
-            setPageCount(null);
+          const validationError = await validatePdf(file);
+          if (validationError) {
+            clearFile();
+            setError(validationError);
+            setSuccessMessage("");
+            return;
           }
+
+          setSelectedFile(file);
+          setError("");
+          setSuccessMessage("");
         }}
       />
 
+      {selectedFile && <p>Selected file: {selectedFile.name}</p>}
       {selectedFile && (
-        <p>
-          Selected file: {selectedFile.name}
-        </p>
+        <button onClick={uploadFile} disabled={uploading}>
+          {uploading ? "Uploading..." : "Upload PDF"}
+        </button>
       )}
-
-      <button
-        onClick={uploadFile}
-        disabled={!selectedFile || isUploading}
-      >
-        {isUploading
-          ? "Uploading and extracting..."
-          : "Upload PDF"}
-      </button>
-
-      {message && (
-        <p>
-          {message}
-        </p>
-      )}
-
-      {pageCount !== null && (
-        <p>
-          Pages extracted: {pageCount}
-        </p>
-      )}
-
-      {error && (
-        <p>
-          Error: {error}
-        </p>
-      )}
+      {error && <p role="alert">{error}</p>}
+      {successMessage && <p role="status">{successMessage}</p>}
     </div>
   );
 }
