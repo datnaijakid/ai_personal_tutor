@@ -1,54 +1,62 @@
-import json
+from fastapi import APIRouter, UploadFile, File, HTTPException
 from pathlib import Path
-from uuid import uuid4
+import json
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from app.services.pdf_extractor import extract_text_from_pdf
+
 
 router = APIRouter()
 
+
 UPLOAD_DIR = Path("uploads")
+EXTRACTED_DIR = Path("extracted")
+
 UPLOAD_DIR.mkdir(exist_ok=True)
-MAX_PDF_SIZE_BYTES = 25 * 1024 * 1024
+EXTRACTED_DIR.mkdir(exist_ok=True)
 
 
 @router.post("/upload")
 async def upload_pdf(file: UploadFile = File(...)):
-    filename = file.filename or ""
-
-    if not filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
-
-    if file.content_type not in {"application/pdf", "application/x-pdf"}:
-        raise HTTPException(status_code=400, detail="Only PDF files are allowed.")
-
-    contents = await file.read()
-
-    if len(contents) > MAX_PDF_SIZE_BYTES:
+    if not file.filename:
         raise HTTPException(
-            status_code=413,
-            detail="PDF files must be 25 MB or smaller.",
+            status_code=400,
+            detail="No filename provided."
         )
 
-    if not contents.startswith(b"%PDF-"):
-        raise HTTPException(status_code=400, detail="The uploaded file is not a valid PDF.")
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF files are allowed."
+        )
 
-    stored_filename = f"{uuid4().hex}.pdf"
-    file_path = UPLOAD_DIR / stored_filename
+    pdf_path = UPLOAD_DIR / file.filename
 
-    with open(file_path, "wb") as buffer:
-        buffer.write(contents)
+    with open(pdf_path, "wb") as buffer:
+        content = await file.read()
+        buffer.write(content)
 
-    metadata = {
-        "original_filename": Path(filename).name,
-        "stored_filename": stored_filename,
-        "content_type": file.content_type,
-        "size_bytes": len(contents),
+    pages = extract_text_from_pdf(str(pdf_path))
+
+    extracted_data = {
+        "filename": file.filename,
+        "page_count": len(pages),
+        "pages": pages,
     }
-    metadata_path = UPLOAD_DIR / f"{file_path.stem}.json"
-    metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+
+    json_filename = Path(file.filename).stem + ".json"
+    json_path = EXTRACTED_DIR / json_filename
+
+    with open(json_path, "w", encoding="utf-8") as json_file:
+        json.dump(
+            extracted_data,
+            json_file,
+            ensure_ascii=False,
+            indent=2
+        )
 
     return {
-        "filename": metadata["original_filename"],
-        "stored_filename": stored_filename,
-        "message": "PDF uploaded successfully"
+        "message": "PDF uploaded and text extracted successfully.",
+        "filename": file.filename,
+        "page_count": len(pages),
+        "extracted_file": str(json_path),
     }
