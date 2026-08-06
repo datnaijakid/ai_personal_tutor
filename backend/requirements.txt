@@ -2,3 +2,5 @@
 uvicorn[standard]
 PyMuPDF
 python-multipart
+sentence-transformers
+numpy
