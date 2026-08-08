@@ -1,30 +1,61 @@
 # AI Personal Tutor
 
-AI Personal Tutor is an early-stage web application for uploading a PDF textbook to a local FastAPI service. The current experience is focused on a secure, validated upload flow; it does not yet provide tutoring, PDF reading, accounts, or persistent database storage.
+AI Personal Tutor is a local-first PDF learning assistant that uploads a document, extracts its text, chunks the content, embeds those chunks with a local sentence-transformers model, and stores the vectors in a persistent ChromaDB collection for semantic search.
 
 ## Current functionality
 
 - A Next.js web page at `http://localhost:3000` for selecting and uploading one textbook PDF.
 - Client-side checks for the file extension, MIME type, 25 MB size limit, and the PDF `%PDF-` header, so users receive immediate feedback.
-- A FastAPI upload endpoint that repeats all validation. Server validation is authoritative, so a bypassed or modified browser request is still rejected.
+- A FastAPI upload endpoint that repeats all validation on the server before accepting the file.
 - Clear UI feedback for uploads, validation failures, and server-provided errors.
-- Successful uploads are stored using a generated filename under `backend/uploads/` and processed into a machine-readable JSON document under `backend/extracted/`. The JSON includes upload metadata, page count, page-numbered extracted text, and overlapping text chunks for downstream processing.
-- A health endpoint for confirming that the API is running.
+- Successful uploads are stored using a generated filename under `backend/uploads/`.
+- PDF text is extracted page by page, chunked into overlapping segments, and saved under `backend/extracted/` as a JSON document.
+- Each chunk is embedded with a local sentence-transformers model and inserted into a persistent ChromaDB collection named `pdf_chunks`.
+- A `POST /search` endpoint performs semantic similarity search over the stored chunks.
+- A health endpoint confirms the API is running.
+
+## Processing pipeline
+
+```text
+PDF
+  ↓
+Extraction
+  ↓
+Chunks
+  ↓
+Embedding Model
+  ↓
+Vectors
+  ↓
+ChromaDB (pdf_chunks)
+```
 
 ## Project structure
 
-```
-backend/                 FastAPI service
-  app/main.py            API application and CORS configuration
-  app/api/upload.py      PDF validation and local storage endpoint
-  app/api/health.py      Health-check endpoint
-  app/services/chunker.py Text chunking for processed PDF pages
-  uploads/               Locally stored original PDF uploads (runtime data)
-  extracted/             Machine-readable extracted PDF text (runtime data)
-frontend/                Next.js application
-  app/page.tsx           Home page
-  components/PDFUploader.tsx
-                          Upload form and client-side validation
+```text
+backend/
+  app/
+    main.py                 FastAPI app and CORS config
+    api/
+      health.py             Health endpoint
+      upload.py             PDF validation, storage, extraction, and indexing
+      search.py             Semantic search route
+    services/
+      pdf_processor.py      PDF text extraction
+      chunker.py            Overlapping chunk generation
+      embeddings.py         Sentence-transformers embedding service
+      vector_store.py       ChromaDB persistence and query wrapper
+  uploads/                  Stored original PDF uploads
+  extracted/                Processed JSON output for each upload
+  chroma_db/                Persistent local ChromaDB storage
+  tests/
+    test_pdf_processing.py
+    test_vector_store.py
+frontend/
+  app/
+    page.tsx                Main upload page
+  components/
+    PDFUploader.tsx         UI and browser validation
 ```
 
 ## Requirements
@@ -34,12 +65,12 @@ frontend/                Next.js application
 
 ## Run locally
 
-Start the backend in one terminal:
+Activate the project venv in one terminal and start the backend:
 
 ```powershell
 cd backend
-python -m pip install -r requirements.txt
-python -m uvicorn app.main:app --reload --port 8000
+.\venv\Scripts\Activate.ps1
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 Start the frontend in another terminal:
@@ -71,7 +102,25 @@ The `POST /upload` endpoint accepts a multipart form field named `file`. A file 
 - be 25 MB or smaller; and
 - begin with the PDF signature `%PDF-`.
 
-Files that fail the type or signature checks return `400`; files over the size limit return `413`. A successful response includes the original filename, generated storage filename, and confirmation message.
+Files that fail the type or signature checks return `400`; files over the size limit return `413`. A successful response includes the original filename, generated storage filename, page count, chunk count, and confirmation message.
+
+## Search API
+
+The `POST /search` endpoint accepts a JSON body like:
+
+```json
+{
+  "query": "What is photosynthesis?",
+  "top_k": 5,
+  "document_id": null
+}
+```
+
+- `query` is required.
+- `top_k` is optional and defaults to `5`.
+- `document_id` is optional and limits results to a single stored document.
+
+The response includes the query, results, and metadata such as `document_id`, `page_number`, and `chunk_number` for each hit.
 
 ## API routes
 
@@ -79,9 +128,17 @@ Files that fail the type or signature checks return `400`; files over the size l
 | --- | --- | --- |
 | `GET` | `/` | Returns a backend-running message. |
 | `GET` | `/health` | Returns `{ "status": "OK" }`. |
-| `POST` | `/upload` | Validates and saves one PDF received in the `file` field. |
+| `POST` | `/upload` | Validates, stores, extracts, chunks, embeds, and indexes one PDF. |
+| `POST` | `/search` | Returns the most similar stored chunks to a text query. |
 
 ## Verification
+
+Run the backend tests in the project venv:
+
+```powershell
+cd backend
+.\venv\Scripts\python -m unittest discover -s tests -v
+```
 
 Run the frontend linter:
 
@@ -92,6 +149,6 @@ npm run lint
 
 ## Current limitations
 
-- Uploaded files remain on the local filesystem; there is no database, cloud storage, user ownership model, or cleanup job.
+- Uploaded files remain on the local filesystem; there is no database-backed user model or cleanup job yet.
 - CORS is configured for the local Next.js origin (`http://localhost:3000`).
-- Uploaded PDFs are converted to page-numbered JSON text and chunks, but tutoring and document management are not implemented yet.
+- Tutoring logic, document management, and richer chat features are not implemented yet.

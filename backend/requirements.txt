@@ -4,3 +4,4 @@ PyMuPDF
 python-multipart
 sentence-transformers
 numpy
+chromadb

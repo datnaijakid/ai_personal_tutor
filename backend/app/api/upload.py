@@ -6,6 +6,7 @@ from fastapi import APIRouter, File, HTTPException, UploadFile
 
 from app.services.chunker import chunk_pages
 from app.services.pdf_processor import extract_text_from_pdf
+from app.services.vector_store import VectorStore
 
 router = APIRouter()
 
@@ -65,6 +66,26 @@ async def upload_pdf(file: UploadFile = File(...)):
             json.dumps(processed_document, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+
+        vector_store = VectorStore(collection_name="pdf_chunks")
+        try:
+            vector_store.add_chunks(
+                [
+                    {
+                        "id": f"{stored_filename}_chunk_{chunk.get('chunk_number', index + 1)}",
+                        "text": chunk["text"],
+                        "page_number": chunk["page_number"],
+                        "document_id": stored_filename,
+                        "document": processed_document["original_filename"],
+                        "chunk_number": chunk.get("chunk_number", index + 1),
+                        "start_char": chunk.get("start_char", 0),
+                        "end_char": chunk.get("end_char", 0),
+                    }
+                    for index, chunk in enumerate(chunks)
+                ]
+            )
+        finally:
+            vector_store.close()
     except Exception as error:
         file_path.unlink(missing_ok=True)
         processed_path.unlink(missing_ok=True)
