@@ -3,6 +3,12 @@ backend/venv/
 __pycache__/
 *.py[cod]
 
+# Project runtime data
+backend/chroma_db/
+backend/uploads/
+backend/extracted/
+backend/tmp_chroma_test/
+
 # Environment variables
 .env
 *.env
