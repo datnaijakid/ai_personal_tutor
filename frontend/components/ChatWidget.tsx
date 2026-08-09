@@ -1,0 +1,186 @@
+import React, { useEffect, useRef, useState } from "react";
+
+type Message = {
+  role: "user" | "assistant";
+  text: string;
+  sources?: string[];
+};
+
+const bubbleStyles: Record<string, React.CSSProperties> = {
+  container: {
+    width: "100%",
+    maxWidth: "760px",
+    margin: "0 auto",
+    display: "flex",
+    flexDirection: "column",
+    gap: "1rem",
+    padding: "1rem",
+    borderRadius: "16px",
+    background: "#ffffff",
+    boxShadow: "0 6px 20px rgba(0,0,0,0.06)",
+  },
+  header: {
+    textAlign: "center",
+  },
+  title: {
+    margin: 0,
+    fontSize: "1.25rem",
+    fontWeight: 700,
+    color: "#0f172a",
+  },
+  messages: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "0.75rem",
+    maxHeight: "420px",
+    overflowY: "auto",
+    padding: "0.25rem",
+  },
+  bubbleUser: {
+    alignSelf: "flex-end",
+    background: "#dbeafe",
+    color: "#04233a",
+    borderRadius: "16px 16px 4px 16px",
+    padding: "0.6rem 0.9rem",
+    maxWidth: "78%",
+    whiteSpace: "pre-wrap",
+  },
+  bubbleAssistant: {
+    alignSelf: "flex-start",
+    background: "linear-gradient(90deg,#93c5fd,#60a5fa)",
+    color: "#021124",
+    borderRadius: "16px 16px 16px 4px",
+    padding: "0.6rem 0.9rem",
+    maxWidth: "78%",
+    whiteSpace: "pre-wrap",
+  },
+  sources: {
+    marginTop: "0.5rem",
+    padding: "0.45rem 0.65rem",
+    background: "rgba(2,6,23,0.03)",
+    borderRadius: "10px",
+    fontSize: "0.88rem",
+    color: "#06313a",
+  },
+  formRow: {
+    display: "flex",
+    gap: "0.5rem",
+    alignItems: "center",
+  },
+  textarea: {
+    flex: 1,
+    minHeight: "80px",
+    padding: "0.6rem",
+    borderRadius: "10px",
+    border: "1px solid rgba(2,6,23,0.06)",
+    resize: "vertical",
+  },
+  button: {
+    padding: "0.6rem 0.9rem",
+    borderRadius: "999px",
+    border: "none",
+    background: "#1e40af",
+    color: "white",
+    cursor: "pointer",
+  },
+  clear: {
+    background: "transparent",
+    border: "1px solid rgba(2,6,23,0.06)",
+    color: "#04233a",
+  },
+};
+
+export default function ChatWidget() {
+  const [messages, setMessages] = useState<Message[]>([
+    { role: "assistant", text: "Hi — ask me about any uploaded PDF or course content.", sources: [] },
+  ]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const endRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  async function sendMessage() {
+    const text = input.trim();
+    if (!text) return;
+    const userMsg: Message = { role: "user", text };
+    setMessages((m) => [...m, userMsg]);
+    setInput("");
+    setLoading(true);
+
+    try {
+      const res = await fetch("http://localhost:8000/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: text }),
+      });
+      const data = await res.json();
+      const assistant: Message = { role: "assistant", text: data?.answer || "(no answer)", sources: data?.sources || [] };
+      setMessages((m) => [...m, assistant]);
+    } catch (err) {
+      setMessages((m) => [...m, { role: "assistant", text: "Server error. Check backend.", sources: [] }]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function clearChat() {
+    setMessages([{ role: "assistant", text: "Hi — ask me about any uploaded PDF or course content.", sources: [] }]);
+  }
+
+  function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && (e.ctrlKey || e.shiftKey) === false && !e.altKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  }
+
+  return (
+    <div style={bubbleStyles.container}>
+      <header style={bubbleStyles.header}>
+        <h3 style={bubbleStyles.title}>DOTU AI — Chat</h3>
+      </header>
+
+      <div style={bubbleStyles.messages}>
+        {messages.map((m, i) => (
+          <div key={i}>
+            <div style={m.role === "user" ? bubbleStyles.bubbleUser : bubbleStyles.bubbleAssistant}>{m.text}</div>
+            {m.sources && m.sources.length > 0 && (
+              <div style={bubbleStyles.sources}>
+                <strong>Sources:</strong>
+                <ul style={{ margin: "0.25rem 0 0 0.75rem" }}>
+                  {m.sources.map((s, idx) => (
+                    <li key={idx}>{s}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        ))}
+        <div ref={endRef} />
+      </div>
+
+      <div style={{ marginTop: "0.5rem" }}>
+        <div style={bubbleStyles.formRow}>
+          <textarea
+            style={bubbleStyles.textarea}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder="Type your question and press Enter to send"
+          />
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            <button style={bubbleStyles.button} onClick={sendMessage} disabled={loading}>
+              {loading ? "..." : "Send"}
+            </button>
+            <button style={{ ...bubbleStyles.button, ...bubbleStyles.clear }} onClick={clearChat}>
+              Clear
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
