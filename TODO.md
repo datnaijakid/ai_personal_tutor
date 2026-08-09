@@ -9,5 +9,5 @@
 - [x] Verify frontend loads and proxy rewrites work
 - [x] Run backend tests (unittest) - 7/7 passed
 - [x] Run frontend lint - 0 errors, 1 warning
-- [ ] Write final working README
-- [ ] Stage, commit, and push updates to GitHub
+- [x] Write final working README
+- [x] Stage, commit, and push updates to GitHub
