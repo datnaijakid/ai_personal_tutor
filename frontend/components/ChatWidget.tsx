@@ -1,4 +1,8 @@
+"use client";
+
 import React, { useEffect, useRef, useState } from "react";
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
 
 type Message = {
   role: "user" | "assistant";
@@ -9,8 +13,6 @@ type Message = {
 const bubbleStyles: Record<string, React.CSSProperties> = {
   container: {
     width: "100%",
-    maxWidth: "760px",
-    margin: "0 auto",
     display: "flex",
     flexDirection: "column",
     gap: "1rem",
@@ -38,7 +40,7 @@ const bubbleStyles: Record<string, React.CSSProperties> = {
   },
   bubbleUser: {
     alignSelf: "flex-end",
-    background: "#dbeafe",
+    background: "#e6f7ff",
     color: "#04233a",
     borderRadius: "16px 16px 4px 16px",
     padding: "0.6rem 0.9rem",
@@ -73,13 +75,15 @@ const bubbleStyles: Record<string, React.CSSProperties> = {
     padding: "0.6rem",
     borderRadius: "10px",
     border: "1px solid rgba(2,6,23,0.06)",
+    background: "#e6f7ff",
+    color: "#04233a",
     resize: "vertical",
   },
   button: {
     padding: "0.6rem 0.9rem",
     borderRadius: "999px",
     border: "none",
-    background: "#1e40af",
+    background: "#60a5fa",
     color: "white",
     cursor: "pointer",
   },
@@ -92,7 +96,11 @@ const bubbleStyles: Record<string, React.CSSProperties> = {
 
 export default function ChatWidget() {
   const [messages, setMessages] = useState<Message[]>([
-    { role: "assistant", text: "Hi — ask me about any uploaded PDF or course content.", sources: [] },
+    {
+      role: "assistant",
+      text: "HI there! my name is DOTU and I will be your personal study assistant, upload your textbook and lets get the learning started!",
+      sources: [],
+    },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
@@ -111,7 +119,8 @@ export default function ChatWidget() {
     setLoading(true);
 
     try {
-      const res = await fetch("http://localhost:8000/chat", {
+      const chatUrl = API_BASE_URL ? `${API_BASE_URL.replace(/\/$/, "")}/chat` : "/chat";
+      const res = await fetch(chatUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ question: text }),
@@ -139,13 +148,17 @@ export default function ChatWidget() {
 
   return (
     <div style={bubbleStyles.container}>
-      <header style={bubbleStyles.header}>
-        <h3 style={bubbleStyles.title}>DOTU AI — Chat</h3>
-      </header>
-
       <div style={bubbleStyles.messages}>
         {messages.map((m, i) => (
-          <div key={i}>
+          <div
+            key={i}
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: m.role === "user" ? "flex-end" : "flex-start",
+              gap: "0.4rem",
+            }}
+          >
             <div style={m.role === "user" ? bubbleStyles.bubbleUser : bubbleStyles.bubbleAssistant}>{m.text}</div>
             {m.sources && m.sources.length > 0 && (
               <div style={bubbleStyles.sources}>

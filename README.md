@@ -5,6 +5,7 @@ AI Personal Tutor is a local-first PDF learning assistant that uploads a documen
 ## Current functionality
 
 - A Next.js web page at `http://localhost:3000` for selecting and uploading one textbook PDF.
+- A chat interface branded as Professor DOTU for asking questions after uploading a textbook.
 - Client-side checks for the file extension, MIME type, 25 MB size limit, and the PDF `%PDF-` header, so users receive immediate feedback.
 - A FastAPI upload endpoint that repeats all validation on the server before accepting the file.
 - Clear UI feedback for uploads, validation failures, and server-provided errors.
@@ -12,6 +13,7 @@ AI Personal Tutor is a local-first PDF learning assistant that uploads a documen
 - PDF text is extracted page by page, chunked into overlapping segments, and saved under `backend/extracted/` as a JSON document.
 - Each chunk is embedded with a local sentence-transformers model and inserted into a persistent ChromaDB collection named `pdf_chunks`.
 - A `POST /search` endpoint performs semantic similarity search over the stored chunks.
+- A `POST /chat` endpoint receives questions from the frontend chat UI.
 - A health endpoint confirms the API is running.
 
 ## Processing pipeline
@@ -53,9 +55,11 @@ backend/
     test_vector_store.py
 frontend/
   app/
-    page.tsx                Main upload page
+    page.tsx                Main upload page and home layout
   components/
-    PDFUploader.tsx         UI and browser validation
+    PDFUploader.tsx         UI and browser validation for textbook upload
+    ChatWidget.tsx          Chat UI and backend `/chat` integration
+  next.config.ts            Frontend API rewrites for `/upload`, `/chat`, and `/search`
 ```
 
 ## Requirements
