@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 
 const MAX_PDF_SIZE_BYTES = 25 * 1024 * 1024;
 const PDF_CONTENT_TYPES = new Set(["application/pdf", "application/x-pdf"]);
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").trim();
 
 type UploadErrorResponse = {
   detail?: string;
@@ -55,7 +55,8 @@ export default function PDFUploader() {
     formData.append("file", selectedFile);
 
     try {
-      const response = await fetch(`${API_BASE_URL}/upload`, { method: "POST", body: formData });
+      const uploadUrl = new URL("/upload", API_BASE_URL).toString();
+      const response = await fetch(uploadUrl, { method: "POST", body: formData });
 
       if (!response.ok) {
         const body = (await response.json().catch(() => null)) as UploadErrorResponse | null;

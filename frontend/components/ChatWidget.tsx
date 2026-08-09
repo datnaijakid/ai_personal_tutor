@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").trim();
 
 type Message = {
   role: "user" | "assistant";
@@ -119,7 +119,7 @@ export default function ChatWidget() {
     setLoading(true);
 
     try {
-      const chatUrl = API_BASE_URL ? `${API_BASE_URL.replace(/\/$/, "")}/chat` : "/chat";
+      const chatUrl = API_BASE_URL ? new URL("/chat", API_BASE_URL).toString() : "/chat";
       const res = await fetch(chatUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

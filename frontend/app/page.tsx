@@ -1,5 +1,5 @@
-﻿import PDFUploader from "@/components/pdfuploader";
-import ChatWidget from "@/components/ChatWidget";
+﻿import ChatWidget from "@/components/ChatWidget";
+import PDFUploader from "@/components/PDFUploader";
 
 const styles = {
   page: {

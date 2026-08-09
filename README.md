@@ -1,65 +1,64 @@
-# AI Personal Tutor
+# AI Personal Tutor (Professor DOTU)
 
-AI Personal Tutor is a local-first PDF learning assistant that uploads a document, extracts its text, chunks the content, embeds those chunks with a local sentence-transformers model, and stores the vectors in a persistent ChromaDB collection for semantic search.
+A local-first PDF learning assistant. Upload a textbook PDF, and the app extracts its text, chunks the content, embeds those chunks with a local sentence-transformers model, and stores the vectors in a persistent ChromaDB collection for semantic search. You can then ask questions through a chat interface branded as **Professor DOTU**, which retrieves the most relevant passages and builds an answer.
 
-## Current functionality
+## Features
 
-- A Next.js web page at `http://localhost:3000` for selecting and uploading one textbook PDF.
-- A chat interface branded as Professor DOTU for asking questions after uploading a textbook.
-- Client-side checks for the file extension, MIME type, 25 MB size limit, and the PDF `%PDF-` header, so users receive immediate feedback.
-- A FastAPI upload endpoint that repeats all validation on the server before accepting the file.
-- Clear UI feedback for uploads, validation failures, and server-provided errors.
-- Successful uploads are stored using a generated filename under `backend/uploads/`.
-- PDF text is extracted page by page, chunked into overlapping segments, and saved under `backend/extracted/` as a JSON document.
-- Each chunk is embedded with a local sentence-transformers model and inserted into a persistent ChromaDB collection named `pdf_chunks`.
-- A `POST /search` endpoint performs semantic similarity search over the stored chunks.
-- A `POST /chat` endpoint receives questions from the frontend chat UI.
-- A health endpoint confirms the API is running.
+- **PDF upload** with client-side and server-side validation (extension, MIME type, 25 MB size limit, `%PDF-` header).
+- **Text extraction** page by page via PyMuPDF.
+- **Chunking** into overlapping segments with configurable chunk size and overlap.
+- **Embeddings** computed locally with the `all-MiniLM-L6-v2` sentence-transformers model.
+- **Persistent vector store** using ChromaDB (`pdf_chunks` collection) for semantic similarity search.
+- **RAG chat** (`Professor DOTU`) that retrieves relevant chunks and optionally generates an answer with a local Ollama LLM (falls back to a context summary when no LLM is available).
+- **Semantic search API** returning ranked chunks with metadata (document, page, score).
+- **Next.js frontend** with a clean, responsive two-panel layout (upload left, chat right).
 
-## Processing pipeline
+## Tech stack
 
-```text
-PDF
-  ↓
-Extraction
-  ↓
-Chunks
-  ↓
-Embedding Model
-  ↓
-Vectors
-  ↓
-ChromaDB (pdf_chunks)
-```
+| Layer          | Technology                                       |
+| -------------- | ------------------------------------------------ |
+| Backend        | Python 3.10+, FastAPI, Uvicorn                   |
+| PDF processing | PyMuPDF                                          |
+| Embeddings     | sentence-transformers (`all-MiniLM-L6-v2`)       |
+| Vector store   | ChromaDB (persistent, cosine space)              |
+| Optional LLM   | Ollama (`qwen2.5:7b-instruct`)                   |
+| Frontend       | Next.js 16, React 19, TypeScript, Tailwind CSS 4 |
 
 ## Project structure
 
 ```text
-backend/
-  app/
-    main.py                 FastAPI app and CORS config
-    api/
-      health.py             Health endpoint
-      upload.py             PDF validation, storage, extraction, and indexing
-      search.py             Semantic search route
-    services/
-      pdf_processor.py      PDF text extraction
-      chunker.py            Overlapping chunk generation
-      embeddings.py         Sentence-transformers embedding service
-      vector_store.py       ChromaDB persistence and query wrapper
-  uploads/                  Stored original PDF uploads
-  extracted/                Processed JSON output for each upload
-  chroma_db/                Persistent local ChromaDB storage
-  tests/
-    test_pdf_processing.py
-    test_vector_store.py
-frontend/
-  app/
-    page.tsx                Main upload page and home layout
-  components/
-    PDFUploader.tsx         UI and browser validation for textbook upload
-    ChatWidget.tsx          Chat UI and backend `/chat` integration
-  next.config.ts            Frontend API rewrites for `/upload`, `/chat`, and `/search`
+.
+├── backend/
+│   ├── app/
+│   │   ├── main.py                 # FastAPI app + CORS config
+│   │   ├── rag.py                  # RAG retrieval + answer builder
+│   │   ├── api/
+│   │   │   ├── health.py           # GET /health
+│   │   │   ├── upload.py           # POST /upload (validate, store, extract, index)
+│   │   │   ├── search.py           # POST /search (semantic search)
+│   │   │   └── chat.py             # POST /chat (RAG chat)
+│   │   └── services/
+│   │       ├── pdf_processor.py    # PDF text extraction
+│   │       ├── chunker.py          # Overlapping chunk generation
+│   │       ├── embeddings.py       # Sentence-transformers embedding service
+│   │       ├── vector_store.py     # ChromaDB persistence + query wrapper
+│   │       └── local_llm.py        # Optional Ollama client
+│   ├── uploads/                    # Stored original PDF files (gitignored)
+│   ├── extracted/                  # Processed JSON per upload (gitignored)
+│   ├── chroma_db/                  # Persistent ChromaDB storage (gitignored)
+│   ├── requirements.txt
+│   └── tests/
+│       ├── test_pdf_processing.py
+│       └── test_vector_store.py
+└── frontend/
+    ├── app/
+    │   ├── layout.tsx
+    │   └── page.tsx                # Main upload + chat page
+    ├── components/
+    │   ├── PDFUploader.tsx         # Upload UI + browser validation
+    │   └── ChatWidget.tsx          # Chat UI + backend /chat integration
+    ├── next.config.ts              # API rewrites for /upload, /chat, /search
+    └── package.json
 ```
 
 ## Requirements
@@ -69,15 +68,19 @@ frontend/
 
 ## Run locally
 
-Activate the project venv in one terminal and start the backend:
+### 1. Backend
 
 ```powershell
 cd backend
+python -m venv venv
 .\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Start the frontend in another terminal:
+The backend runs at `http://127.0.0.1:8000`.
+
+### 2. Frontend
 
 ```powershell
 cd frontend
@@ -85,21 +88,46 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:3000`. The frontend targets `http://localhost:8000` by default.
+The frontend runs at `http://localhost:3000`.
+
+### 3. Open the app
+
+Open `http://localhost:3000`, upload a textbook PDF, then ask Professor DOTU questions about it.
 
 ### Frontend API URL
 
-To use an API running at a different URL, create `frontend/.env.local`:
+The frontend targets `http://localhost:8000` by default. To point it at a different backend, create `frontend/.env.local`:
 
 ```dotenv
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
-`NEXT_PUBLIC_API_URL` is exposed to the browser, so it must only contain a public API URL; never a secret or API key. Restart the Next.js development server after changing it.
+`NEXT_PUBLIC_API_URL` is exposed to the browser, so it must only contain a public URL — never a secret or API key. Restart the Next.js dev server after changing it.
 
-## Upload rules
+### Optional: local LLM (Ollama)
 
-The `POST /upload` endpoint accepts a multipart form field named `file`. A file must:
+The `/chat` endpoint uses a local Ollama model when available and otherwise falls back to a context summary. To enable LLM-generated answers:
+
+```powershell
+ollama pull qwen2.5:7b-instruct
+ollama serve
+```
+
+The model and base URL are configurable in `backend/app/services/local_llm.py`.
+
+## API routes
+
+| Method | Route     | Description                                                       |
+| ------ | --------- | ----------------------------------------------------------------- |
+| `GET`  | `/`       | Returns a backend-running message.                                |
+| `GET`  | `/health` | Returns `{ "status": "OK" }`.                                     |
+| `POST` | `/upload` | Validates, stores, extracts, chunks, embeds, and indexes one PDF. |
+| `POST` | `/search` | Returns the most similar stored chunks to a text query.           |
+| `POST` | `/chat`   | Retrieves relevant chunks and returns an answer with sources.     |
+
+### Upload rules
+
+`POST /upload` accepts a multipart form field named `file`. A file must:
 
 - have a `.pdf` filename extension;
 - use `application/pdf` or `application/x-pdf` as its MIME type;
@@ -108,9 +136,9 @@ The `POST /upload` endpoint accepts a multipart form field named `file`. A file 
 
 Files that fail the type or signature checks return `400`; files over the size limit return `413`. A successful response includes the original filename, generated storage filename, page count, chunk count, and confirmation message.
 
-## Search API
+### Search API
 
-The `POST /search` endpoint accepts a JSON body like:
+`POST /search` accepts a JSON body:
 
 ```json
 {
@@ -121,30 +149,51 @@ The `POST /search` endpoint accepts a JSON body like:
 ```
 
 - `query` is required.
-- `top_k` is optional and defaults to `5`.
+- `top_k` is optional and defaults to `5` (accepted range `1–25`).
 - `document_id` is optional and limits results to a single stored document.
 
-The response includes the query, results, and metadata such as `document_id`, `page_number`, and `chunk_number` for each hit.
+The response includes the query, results, and metadata such as `document_id`, `page_number`, `chunk_number`, and `score` for each hit.
 
-## API routes
+### Chat API
 
-| Method | Route | Description |
-| --- | --- | --- |
-| `GET` | `/` | Returns a backend-running message. |
-| `GET` | `/health` | Returns `{ "status": "OK" }`. |
-| `POST` | `/upload` | Validates, stores, extracts, chunks, embeds, and indexes one PDF. |
-| `POST` | `/search` | Returns the most similar stored chunks to a text query. |
+`POST /chat` accepts a JSON body:
+
+```json
+{
+  "question": "Explain the conceptual framework."
+}
+```
+
+The response includes an `answer` and a list of `sources` (document + page references).
+
+## Processing pipeline
+
+```text
+PDF
+  ↓
+Extraction (PyMuPDF, page by page)
+  ↓
+Chunks (overlapping, JSON-serializable)
+  ↓
+Embedding Model (all-MiniLM-L6-v2)
+  ↓
+Vectors
+  ↓
+ChromaDB (pdf_chunks)
+  ↓
+Semantic Search / RAG Chat
+```
 
 ## Verification
 
-Run the backend tests in the project venv:
+### Backend tests
 
 ```powershell
 cd backend
 .\venv\Scripts\python -m unittest discover -s tests -v
 ```
 
-Run the frontend linter:
+### Frontend lint
 
 ```powershell
 cd frontend
@@ -155,4 +204,4 @@ npm run lint
 
 - Uploaded files remain on the local filesystem; there is no database-backed user model or cleanup job yet.
 - CORS is configured for the local Next.js origin (`http://localhost:3000`).
-- Tutoring logic, document management, and richer chat features are not implemented yet.
+- Richer tutoring features and multi-document management are not implemented yet.
