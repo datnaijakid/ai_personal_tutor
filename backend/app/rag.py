@@ -8,6 +8,11 @@ from app.services.vector_store import VectorStore
 
 LOCAL_LLM = LocalLLMClient()
 
+# Chroma returns the nearest chunks for every query, including queries that have
+# no meaningful relationship to an uploaded document. Keep only chunks with a
+# sufficiently strong cosine-similarity score before using them for chat.
+MIN_CHAT_RELEVANCE_SCORE = 0.40
+
 
 def build_source_label(metadata: dict[str, Any]) -> str:
     document_name = metadata.get("document") or metadata.get("document_id") or "Uploaded document"
@@ -21,13 +26,19 @@ def retrieve_relevant_chunks(
     question: str,
     top_k: int = 5,
     document_id: str | None = None,
+    min_score: float = MIN_CHAT_RELEVANCE_SCORE,
 ) -> list[dict[str, Any]]:
     if not question or not question.strip():
         return []
 
     vector_store = VectorStore()
     try:
-        return vector_store.search(question.strip(), top_k=top_k, document_id=document_id)
+        results = vector_store.search(question.strip(), top_k=top_k, document_id=document_id)
+        return [
+            result
+            for result in results
+            if float(result.get("score", 0.0)) >= min_score
+        ]
     finally:
         vector_store.close()
 

@@ -18,6 +18,10 @@ chroma_db/
 frontend/node_modules/
 frontend/.next/
 
+# Local development server output
+server.out.log
+server.err.log
+
 # OS
 .DS_Store
 Thumbs.db

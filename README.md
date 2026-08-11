@@ -75,7 +75,7 @@ cd backend
 python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
+.\venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 The backend runs at `http://127.0.0.1:8000`.
@@ -90,13 +90,30 @@ npm run dev
 
 The frontend runs at `http://localhost:3000`.
 
+> **Using a separate backend, Docker, VM, or deployed site?** Before starting the frontend, create its local configuration file from the committed template:
+>
+> ```powershell
+> Copy-Item .env.local.example .env.local
+> ```
+>
+> Then set `NEXT_PUBLIC_API_URL` in `.env.local` to the public or network-reachable URL of the FastAPI backend. `.env.local` is intentionally ignored by Git because deployments may use different addresses; `.env.local.example` is included in the repository as the required setup template.
+
 ### 3. Open the app
 
 Open `http://localhost:3000`, upload a textbook PDF, then ask Professor DOTU questions about it.
 
 ### Frontend API URL
 
-The frontend targets `http://localhost:8000` by default. To point it at a different backend, create `frontend/.env.local`:
+For the standard local setup, no `.env.local` file is required: the frontend uses its `/chat`, `/upload`, and `/search` rewrites, which target the backend at `http://127.0.0.1:8000`.
+
+When the frontend must reach a backend at a different address, create `frontend/.env.local` from the tracked template:
+
+```powershell
+cd frontend
+Copy-Item .env.local.example .env.local
+```
+
+Then update the value as needed:
 
 ```dotenv
 NEXT_PUBLIC_API_URL=http://localhost:8000
@@ -106,14 +123,34 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 ### Optional: local LLM (Ollama)
 
-The `/chat` endpoint uses a local Ollama model when available and otherwise falls back to a context summary. To enable LLM-generated answers:
+The `/chat` endpoint uses a local Ollama model when available and otherwise falls back to showing relevant excerpts from the uploaded PDF. This fallback is expected behaviour, but it means the app is not generating a tutor-style answer yet.
+
+To enable AI-generated answers, install [Ollama](https://ollama.com/) on the **same machine that runs the FastAPI backend**, then run:
 
 ```powershell
 ollama pull qwen2.5:7b-instruct
 ollama serve
 ```
 
-The model and base URL are configurable in `backend/app/services/local_llm.py`.
+In a second terminal, confirm that Ollama and the model are available:
+
+```powershell
+ollama list
+Invoke-RestMethod http://localhost:11434/api/tags
+```
+
+`ollama list` must include `qwen2.5:7b-instruct`, and the API command must return a response. Start the FastAPI backend only after Ollama is available, or restart the backend after starting Ollama.
+
+#### Ollama troubleshooting
+
+If chat responses begin with `Based on the uploaded material:` and list PDF text, the backend could not generate an answer. Check the following:
+
+- Run `ollama serve` and keep it running while the backend is running.
+- Run `ollama pull qwen2.5:7b-instruct` if `ollama list` does not show the model.
+- Ensure port `11434` is not blocked by a local firewall.
+- If the backend runs in Docker, a VM, or a remote server, `localhost:11434` refers to that backend environment, **not** your own computer. Run Ollama in the same environment or change the Ollama base URL in `backend/app/services/local_llm.py` to an address reachable from the backend.
+
+The default model and Ollama address (`http://localhost:11434`) are currently configured in `backend/app/services/local_llm.py`.
 
 ## API routes
 
@@ -165,6 +202,7 @@ The response includes the query, results, and metadata such as `document_id`, `p
 ```
 
 The response includes an `answer` and a list of `sources` (document + page references).
+For chat, the app only includes sources whose semantic-similarity score meets the built-in relevance threshold. Questions that are not covered by the uploaded material return a no-match response with no sources.
 
 ## Processing pipeline
 

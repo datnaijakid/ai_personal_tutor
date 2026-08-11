@@ -73,6 +73,7 @@ class VectorStoreTests(unittest.TestCase):
                 "id": "chunk_13",
                 "text": "Financial statements show the company had strong operating cash flow.",
                 "metadata": {"document_id": "Chapter 1 slides.pdf", "page_number": 13},
+                "score": 0.85,
             }
         ]
 
@@ -84,6 +85,23 @@ class VectorStoreTests(unittest.TestCase):
 
         self.assertIn("strong operating cash flow", response["answer"].lower())
         self.assertIn("Chapter 1 slides.pdf", response["sources"][0])
+
+    def test_build_answer_returns_no_sources_for_irrelevant_chunks(self):
+        results = [
+            {
+                "id": "chunk_1",
+                "text": "Photosynthesis converts light energy into chemical energy.",
+                "metadata": {"document_id": "Biology.pdf", "page_number": 4},
+                "score": 0.12,
+            }
+        ]
+
+        with patch("app.rag.VectorStore") as vector_store:
+            vector_store.return_value.search.return_value = results
+            response = build_answer("What is the capital of France?")
+
+        self.assertIn("couldn", response["answer"].lower())
+        self.assertEqual(response["sources"], [])
 
 
 from app.rag import build_answer
