@@ -45,6 +45,9 @@ def build_answer(
             "sources": [],
         }
 
+    # A PDF can be uploaded more than once and neighbouring chunks overlap.
+    # Do not give the model (or the fallback) the same passage repeatedly.
+    unique_texts: set[str] = set()
     answer_parts: list[str] = []
     sources: list[str] = []
 
@@ -52,6 +55,11 @@ def build_answer(
         text = (result.get("text") or "").strip()
         if not text:
             continue
+
+        normalized_text = " ".join(text.split()).casefold()
+        if normalized_text in unique_texts:
+            continue
+        unique_texts.add(normalized_text)
 
         metadata = result.get("metadata") or {}
         source_label = build_source_label(metadata)
@@ -69,9 +77,10 @@ def build_answer(
                 "sources": sources,
             }
 
-    fallback = "Based on the uploaded material:\n\n"
-    for index, text in enumerate(answer_parts, start=1):
-        fallback += f"{index}. {text[:500].strip()}\n\n"
+    # The LLM is optional.  If it is unavailable, returning five unedited
+    # search chunks is confusing and often looks like a repeated answer.
+    fallback = "I found this relevant passage in the uploaded material:\n\n"
+    fallback += answer_parts[0]
 
     return {
         "answer": fallback,
