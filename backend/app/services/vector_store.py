@@ -83,6 +83,15 @@ class VectorStore:
         )
         return ids
 
+    def replace_chunks(self, chunks: list[dict[str, Any]]) -> list[str]:
+        """Replace the searchable document when a new PDF is uploaded."""
+        self.client.delete_collection(self.collection.name)
+        self.collection = self.client.get_or_create_collection(
+            name=self.collection.name,
+            metadata={"hnsw:space": "cosine"},
+        )
+        return self.add_chunks(chunks)
+
     def search(
         self,
         query: str,

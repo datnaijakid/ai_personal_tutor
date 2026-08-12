@@ -54,7 +54,8 @@ class LocalLLMClient:
         )
 
         try:
-            with request.urlopen(req, timeout=60) as response:
+            # A local model can take longer than a minute on its first request.
+            with request.urlopen(req, timeout=120) as response:
                 body = response.read().decode("utf-8")
         except (error.URLError, TimeoutError, OSError):
             return ""

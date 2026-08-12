@@ -69,7 +69,10 @@ async def upload_pdf(file: UploadFile = File(...)):
 
         vector_store = VectorStore(collection_name="pdf_chunks")
         try:
-            vector_store.add_chunks(
+            # The UI has one active textbook and no document picker. Replacing
+            # the collection prevents previous uploads of the same PDF from
+            # being retrieved alongside the current one.
+            vector_store.replace_chunks(
                 [
                     {
                         "id": f"{stored_filename}_chunk_{chunk.get('chunk_number', index + 1)}",

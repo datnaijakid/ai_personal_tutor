@@ -4,7 +4,7 @@ import React, { useEffect, useRef, useState } from "react";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").trim();
 
-type Message = {
+export type Message = {
   role: "user" | "assistant";
   text: string;
   sources?: string[];
@@ -94,14 +94,12 @@ const bubbleStyles: Record<string, React.CSSProperties> = {
   },
 };
 
-export default function ChatWidget() {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      role: "assistant",
-      text: "HI there! my name is DOTU and I will be your personal study assistant, upload your textbook and lets get the learning started!",
-      sources: [],
-    },
-  ]);
+type ChatWidgetProps = {
+  messages: Message[];
+  onMessagesChange: (messages: Message[]) => void;
+};
+
+export default function ChatWidget({ messages, onMessagesChange }: ChatWidgetProps) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -114,7 +112,7 @@ export default function ChatWidget() {
     const text = input.trim();
     if (!text) return;
     const userMsg: Message = { role: "user", text };
-    setMessages((m) => [...m, userMsg]);
+    onMessagesChange([...messages, userMsg]);
     setInput("");
     setLoading(true);
 
@@ -127,16 +125,16 @@ export default function ChatWidget() {
       });
       const data = await res.json();
       const assistant: Message = { role: "assistant", text: data?.answer || "(no answer)", sources: data?.sources || [] };
-      setMessages((m) => [...m, assistant]);
+      onMessagesChange([...messages, userMsg, assistant]);
     } catch (err) {
-      setMessages((m) => [...m, { role: "assistant", text: "Server error. Check backend.", sources: [] }]);
+      onMessagesChange([...messages, userMsg, { role: "assistant", text: "Server error. Check backend.", sources: [] }]);
     } finally {
       setLoading(false);
     }
   }
 
   function clearChat() {
-    setMessages([{ role: "assistant", text: "Hi — ask me about any uploaded PDF or course content.", sources: [] }]);
+    onMessagesChange([]);
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -149,6 +147,9 @@ export default function ChatWidget() {
   return (
     <div style={bubbleStyles.container}>
       <div style={bubbleStyles.messages}>
+        {messages.length === 0 && (
+          <div style={bubbleStyles.bubbleAssistant}>Hi — upload a textbook and ask me about the course material.</div>
+        )}
         {messages.map((m, i) => (
           <div
             key={i}
@@ -186,7 +187,7 @@ export default function ChatWidget() {
           />
           <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
             <button style={bubbleStyles.button} onClick={sendMessage} disabled={loading}>
-              {loading ? "..." : "Send"}
+              {loading ? <span className="typing-indicator" aria-label="Professor DOTU is typing"><i /><i /><i /></span> : "Send"}
             </button>
             <button style={{ ...bubbleStyles.button, ...bubbleStyles.clear }} onClick={clearChat}>
               Clear
