@@ -60,6 +60,8 @@ class VectorStore:
                 "page_number": int(chunk.get("page_number", 0) or 0),
                 "chunk_number": int(chunk.get("chunk_number", 0) or 0),
             }
+            if "course_id" in chunk:
+                metadata["course_id"] = str(chunk["course_id"])
             if "document" in chunk:
                 metadata["document"] = str(chunk["document"])
             if "start_char" in chunk:
@@ -83,26 +85,28 @@ class VectorStore:
         )
         return ids
 
-    def replace_chunks(self, chunks: list[dict[str, Any]]) -> list[str]:
-        """Replace the searchable document when a new PDF is uploaded."""
-        self.client.delete_collection(self.collection.name)
-        self.collection = self.client.get_or_create_collection(
-            name=self.collection.name,
-            metadata={"hnsw:space": "cosine"},
-        )
-        return self.add_chunks(chunks)
-
     def search(
         self,
         query: str,
         top_k: int = 5,
         document_id: str | None = None,
+        course_id: str | None = None,
     ) -> list[dict[str, Any]]:
         if not query or not query.strip():
             return []
 
         query_embedding = self.embedding_service.embed([query.strip()])[0]
-        where = {"document_id": document_id} if document_id else None
+        filters = []
+        if document_id:
+            filters.append({"document_id": document_id})
+        if course_id:
+            filters.append({"course_id": course_id})
+
+        where = None
+        if len(filters) == 1:
+            where = filters[0]
+        elif filters:
+            where = {"$and": filters}
 
         result = self.collection.query(
             query_embeddings=[query_embedding],

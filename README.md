@@ -8,7 +8,7 @@ A local-first PDF learning assistant. Upload a textbook PDF, and the app extract
 - **Text extraction** page by page via PyMuPDF.
 - **Chunking** into overlapping segments with configurable chunk size and overlap.
 - **Embeddings** computed locally with the `all-MiniLM-L6-v2` sentence-transformers model.
-- **Persistent vector store** using ChromaDB (`pdf_chunks` collection) for semantic similarity search.
+- **Course-scoped vector store** using ChromaDB (`pdf_chunks` collection), so chat only searches PDFs uploaded to the active course.
 - **RAG chat** (`Professor DOTU`) that retrieves relevant chunks and optionally generates an answer with a local Ollama LLM (falls back to a context summary when no LLM is available).
 - **Semantic search API** returning ranked chunks with metadata (document, page, score).
 - **Next.js frontend** with a clean, responsive two-panel layout (upload left, chat right).
@@ -158,13 +158,13 @@ The default model and Ollama address (`http://localhost:11434`) are currently co
 | ------ | --------- | ----------------------------------------------------------------- |
 | `GET`  | `/`       | Returns a backend-running message.                                |
 | `GET`  | `/health` | Returns `{ "status": "OK" }`.                                     |
-| `POST` | `/upload` | Validates, stores, extracts, chunks, embeds, and indexes one PDF. |
+| `POST` | `/upload` | Validates, stores, extracts, chunks, embeds, and indexes one PDF for a course. |
 | `POST` | `/search` | Returns the most similar stored chunks to a text query.           |
 | `POST` | `/chat`   | Retrieves relevant chunks and returns an answer with sources.     |
 
 ### Upload rules
 
-`POST /upload` accepts a multipart form field named `file`. A file must:
+`POST /upload` accepts multipart form fields named `file` and `course_id`. The frontend supplies the active course ID automatically. A file must:
 
 - have a `.pdf` filename extension;
 - use `application/pdf` or `application/x-pdf` as its MIME type;
@@ -197,11 +197,12 @@ The response includes the query, results, and metadata such as `document_id`, `p
 
 ```json
 {
-  "question": "Explain the conceptual framework."
+  "question": "Explain the conceptual framework.",
+  "course_id": "the-active-course-id"
 }
 ```
 
-The response includes an `answer` and a list of `sources` (document + page references).
+The response includes an `answer` and a list of `sources` (document + page references). `course_id` is required, which prevents material from another course being used in the answer.
 For chat, the app only includes sources whose semantic-similarity score meets the built-in relevance threshold. Questions that are not covered by the uploaded material return a no-match response with no sources.
 
 ## Processing pipeline

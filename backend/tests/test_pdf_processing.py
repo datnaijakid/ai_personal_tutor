@@ -68,7 +68,8 @@ class PdfProcessingTests(unittest.TestCase):
                             filename="textbook.pdf",
                             file=BytesIO(make_pdf_bytes("Machine-readable text")),
                             headers={"content-type": "application/pdf"},
-                        )
+                        ),
+                        course_id="biology",
                     )
                 )
             finally:
@@ -84,6 +85,7 @@ class PdfProcessingTests(unittest.TestCase):
         self.assertEqual(result["page_count"], 1)
         self.assertEqual(result["chunk_count"], 1)
         self.assertEqual(processed_document["original_filename"], "textbook.pdf")
+        self.assertEqual(processed_document["course_id"], "biology")
         self.assertEqual(processed_document["stored_pdf_path"], str(stored_pdf_path))
         self.assertEqual(processed_document["page_count"], 1)
         self.assertEqual(processed_document["chunk_count"], 1)

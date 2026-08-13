@@ -2,7 +2,7 @@
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 
 from app.services.chunker import chunk_pages
 from app.services.pdf_processor import extract_text_from_pdf
@@ -16,7 +16,10 @@ MAX_PDF_SIZE_BYTES = 25 * 1024 * 1024
 
 
 @router.post("/upload")
-async def upload_pdf(file: UploadFile = File(...)):
+async def upload_pdf(
+    file: UploadFile = File(...),
+    course_id: str = Form(..., min_length=1),
+):
     filename = file.filename or ""
 
     if not filename:
@@ -52,6 +55,7 @@ async def upload_pdf(file: UploadFile = File(...)):
         chunks = chunk_pages(pages)
 
         processed_document = {
+            "course_id": course_id,
             "original_filename": Path(filename).name,
             "stored_filename": stored_filename,
             "stored_pdf_path": str(file_path),
@@ -69,10 +73,7 @@ async def upload_pdf(file: UploadFile = File(...)):
 
         vector_store = VectorStore(collection_name="pdf_chunks")
         try:
-            # The UI has one active textbook and no document picker. Replacing
-            # the collection prevents previous uploads of the same PDF from
-            # being retrieved alongside the current one.
-            vector_store.replace_chunks(
+            vector_store.add_chunks(
                 [
                     {
                         "id": f"{stored_filename}_chunk_{chunk.get('chunk_number', index + 1)}",
@@ -80,6 +81,7 @@ async def upload_pdf(file: UploadFile = File(...)):
                         "page_number": chunk["page_number"],
                         "document_id": stored_filename,
                         "document": processed_document["original_filename"],
+                        "course_id": course_id,
                         "chunk_number": chunk.get("chunk_number", index + 1),
                         "start_char": chunk.get("start_char", 0),
                         "end_char": chunk.get("end_char", 0),
@@ -99,6 +101,7 @@ async def upload_pdf(file: UploadFile = File(...)):
 
     return {
         "filename": processed_document["original_filename"],
+        "course_id": course_id,
         "stored_filename": stored_filename,
         "page_count": processed_document["page_count"],
         "chunk_count": processed_document["chunk_count"],

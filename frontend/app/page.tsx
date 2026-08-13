@@ -100,7 +100,7 @@ export default function Home() {
 
       <section style={styles.panelGrid}>
         <div className="course-upload-panel" style={{ ...styles.leftPanel, minWidth: 0 }}><div style={styles.cardShell}><div style={styles.cardHeader}><h2 style={styles.cardTitle}>Textbook upload</h2></div><div style={styles.cardBody}>
-          <PDFUploader key={activeCourse.id} onUploadComplete={(fileName) => updateActiveCourse((course) => ({ ...course, files: [...course.files, { id: crypto.randomUUID(), name: fileName }] }))} />
+          <PDFUploader key={activeCourse.id} courseId={activeCourse.id} onUploadComplete={(fileName) => updateActiveCourse((course) => ({ ...course, files: [...course.files, { id: crypto.randomUUID(), name: fileName }] }))} />
           <section style={{ marginTop: "1.25rem" }} aria-label="Uploaded PDFs">
             <span style={{ display: "inline-block", padding: "0.35rem 0.7rem", borderRadius: "999px", background: "#dbeafe", color: "#1e3a8a", fontSize: "0.82rem", fontWeight: 700 }}>Uploaded PDFs</span>
             {activeCourse.files.length === 0 ? (
@@ -113,7 +113,7 @@ export default function Home() {
           </section>
         </div></div></div>
         <div className="course-chat-panel" style={{ ...styles.rightPanel, minWidth: 0 }}><div style={styles.cardShell}><div style={styles.cardHeader}><h2 style={styles.cardTitle}>Chat with Professor DOTU</h2></div><div style={styles.cardBody}>
-          <ChatWidget key={activeCourse.id} messages={activeCourse.messages} onMessagesChange={(messages) => updateActiveCourse((course) => ({ ...course, messages }))} />
+          <ChatWidget key={activeCourse.id} courseId={activeCourse.id} messages={activeCourse.messages} onMessagesChange={(messages) => updateActiveCourse((course) => ({ ...course, messages }))} />
         </div></div></div>
       </section>
     </main>

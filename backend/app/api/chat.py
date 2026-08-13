@@ -8,6 +8,7 @@ router = APIRouter()
 
 class ChatRequest(BaseModel):
     question: str = Field(..., min_length=1)
+    course_id: str = Field(..., min_length=1)
 
 
 class ChatResponse(BaseModel):
@@ -17,5 +18,5 @@ class ChatResponse(BaseModel):
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(payload: ChatRequest):
-    result = build_answer(payload.question, top_k=5)
+    result = build_answer(payload.question, top_k=5, course_id=payload.course_id)
     return ChatResponse(answer=result["answer"], sources=result["sources"])

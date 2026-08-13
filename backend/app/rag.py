@@ -26,6 +26,7 @@ def retrieve_relevant_chunks(
     question: str,
     top_k: int = 5,
     document_id: str | None = None,
+    course_id: str | None = None,
     min_score: float = MIN_CHAT_RELEVANCE_SCORE,
 ) -> list[dict[str, Any]]:
     if not question or not question.strip():
@@ -33,7 +34,12 @@ def retrieve_relevant_chunks(
 
     vector_store = VectorStore()
     try:
-        results = vector_store.search(question.strip(), top_k=top_k, document_id=document_id)
+        results = vector_store.search(
+            question.strip(),
+            top_k=top_k,
+            document_id=document_id,
+            course_id=course_id,
+        )
         return [
             result
             for result in results
@@ -47,8 +53,14 @@ def build_answer(
     question: str,
     top_k: int = 5,
     document_id: str | None = None,
+    course_id: str | None = None,
 ) -> dict[str, Any]:
-    results = retrieve_relevant_chunks(question, top_k=top_k, document_id=document_id)
+    results = retrieve_relevant_chunks(
+        question,
+        top_k=top_k,
+        document_id=document_id,
+        course_id=course_id,
+    )
 
     if not results:
         return {

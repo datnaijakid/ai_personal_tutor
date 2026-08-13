@@ -4,10 +4,13 @@ import { useEffect, useRef, useState } from "react";
 
 const MAX_PDF_SIZE_BYTES = 25 * 1024 * 1024;
 const PDF_CONTENT_TYPES = new Set(["application/pdf", "application/x-pdf"]);
-const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").trim();
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").trim();
 
 type UploadErrorResponse = { detail?: string };
-type PDFUploaderProps = { onUploadComplete?: (fileName: string) => void };
+type PDFUploaderProps = {
+  courseId: string;
+  onUploadComplete?: (fileName: string) => void;
+};
 
 const styles = {
   chooseButton: { display: "inline-flex", alignItems: "center", gap: "0.5rem", padding: "0.72rem 1rem", border: 0, borderRadius: "999px", background: "#2563eb", color: "#fff", fontWeight: 700, cursor: "pointer", boxShadow: "0 6px 14px rgba(37, 99, 235, 0.2)" },
@@ -24,7 +27,7 @@ async function validatePdf(file: File): Promise<string | null> {
   return new TextDecoder().decode(header) === "%PDF-" ? null : "The uploaded file is not a valid PDF.";
 }
 
-export default function PDFUploader({ onUploadComplete }: PDFUploaderProps) {
+export default function PDFUploader({ courseId, onUploadComplete }: PDFUploaderProps) {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
@@ -56,7 +59,9 @@ export default function PDFUploader({ onUploadComplete }: PDFUploaderProps) {
       for (const file of selectedFiles) {
         const formData = new FormData();
         formData.append("file", file);
-        const response = await fetch(new URL("/upload", API_BASE_URL).toString(), { method: "POST", body: formData });
+        formData.append("course_id", courseId);
+        const uploadUrl = API_BASE_URL ? new URL("/upload", API_BASE_URL).toString() : "/upload";
+        const response = await fetch(uploadUrl, { method: "POST", body: formData });
         if (!response.ok) {
           const body = (await response.json().catch(() => null)) as UploadErrorResponse | null;
           throw new Error(`${file.name}: ${body?.detail || "Upload failed. Please try again."}`);

@@ -12,6 +12,7 @@ class SearchRequest(BaseModel):
     query: str = Field(..., min_length=1)
     top_k: int = Field(default=5, ge=1, le=25)
     document_id: str | None = None
+    course_id: str | None = None
 
 
 @router.post("/search")
@@ -20,11 +21,13 @@ async def search_documents(payload: SearchRequest):
         query=payload.query,
         top_k=payload.top_k,
         document_id=payload.document_id,
+        course_id=payload.course_id,
     )
 
     return {
         "query": payload.query,
         "top_k": payload.top_k,
         "document_id": payload.document_id,
+        "course_id": payload.course_id,
         "results": results,
     }

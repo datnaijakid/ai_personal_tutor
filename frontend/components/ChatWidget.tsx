@@ -95,11 +95,12 @@ const bubbleStyles: Record<string, React.CSSProperties> = {
 };
 
 type ChatWidgetProps = {
+  courseId: string;
   messages: Message[];
   onMessagesChange: (messages: Message[]) => void;
 };
 
-export default function ChatWidget({ messages, onMessagesChange }: ChatWidgetProps) {
+export default function ChatWidget({ courseId, messages, onMessagesChange }: ChatWidgetProps) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
@@ -121,12 +122,12 @@ export default function ChatWidget({ messages, onMessagesChange }: ChatWidgetPro
       const res = await fetch(chatUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: text }),
+        body: JSON.stringify({ question: text, course_id: courseId }),
       });
       const data = await res.json();
       const assistant: Message = { role: "assistant", text: data?.answer || "(no answer)", sources: data?.sources || [] };
       onMessagesChange([...messages, userMsg, assistant]);
-    } catch (err) {
+    } catch {
       onMessagesChange([...messages, userMsg, { role: "assistant", text: "Server error. Check backend.", sources: [] }]);
     } finally {
       setLoading(false);
