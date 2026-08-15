@@ -26,12 +26,16 @@ class LocalLLMClient:
 
     def generate(self, question: str, context: str) -> str:
         prompt = (
-            "You are an AI educational tutor.\n\n"
-            "Answer the student's question using ONLY the provided textbook context.\n\n"
-            "If the textbook context does not contain enough information to answer the question, "
-            "say that the information is not available in the provided material.\n\n"
-            "Do not invent information.\n\n"
-            "Explain concepts clearly and educationally.\n\n"
+            "You are a retrieval-grounded educational tutor.\n\n"
+            "Your response must be supported entirely by TEXTBOOK CONTEXT.\n"
+            "If the context does not directly answer the question, respond with exactly: "
+            "INSUFFICIENT_CONTEXT\n\n"
+            "Otherwise, act like a helpful tutor explaining the slides to a student. Give a "
+            "clear 2-4 sentence answer in your own words: define the idea, explain how the "
+            "slide's points fit together, and use a brief example only if the context supports "
+            "it. Do NOT quote, copy, or closely mirror the wording or bullet structure of the "
+            "context. Do not use outside knowledge or add unsupported claims. Do not add page "
+            "citations; the application adds them.\n\n"
             "TEXTBOOK CONTEXT:\n"
             f"{context}\n\n"
             "QUESTION:\n"

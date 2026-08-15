@@ -12,7 +12,7 @@ class SearchRequest(BaseModel):
     query: str = Field(..., min_length=1)
     top_k: int = Field(default=5, ge=1, le=25)
     document_id: str | None = None
-    course_id: str | None = None
+    course_id: str = Field(..., min_length=1)
 
 
 @router.post("/search")

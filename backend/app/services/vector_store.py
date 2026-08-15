@@ -53,21 +53,24 @@ class VectorStore:
             if not text:
                 continue
 
-            chunk_id = str(chunk.get("id") or f"chunk_{chunk.get('chunk_number', len(ids) + 1)}")
-            document_id = chunk.get("document_id") or chunk.get("document") or "unknown_document"
+            document_id = str(chunk.get("document_id") or "").strip()
+            course_id = str(chunk.get("course_id") or "").strip()
+            if not document_id or not course_id:
+                raise ValueError("Every chunk must include non-empty document_id and course_id metadata.")
+
+            chunk_id = str(
+                chunk.get("id") or f"{document_id}:chunk:{chunk.get('chunk_number', len(ids) + 1)}"
+            )
             metadata = {
                 "document_id": str(document_id),
+                "document_name": str(
+                    chunk.get("document_name") or chunk.get("document") or document_id
+                ),
+                "course_id": course_id,
                 "page_number": int(chunk.get("page_number", 0) or 0),
                 "chunk_number": int(chunk.get("chunk_number", 0) or 0),
+                "text": text,
             }
-            if "course_id" in chunk:
-                metadata["course_id"] = str(chunk["course_id"])
-            if "document" in chunk:
-                metadata["document"] = str(chunk["document"])
-            if "start_char" in chunk:
-                metadata["start_char"] = int(chunk["start_char"])
-            if "end_char" in chunk:
-                metadata["end_char"] = int(chunk["end_char"])
 
             documents.append(text)
             ids.append(chunk_id)
@@ -134,3 +137,96 @@ class VectorStore:
                 }
             )
         return results
+
+    def delete_document(self, document_id: str, course_id: str) -> None:
+        """Delete only one course-scoped document's vectors."""
+        self.collection.delete(where={"$and": [{"document_id": document_id}, {"course_id": course_id}]})
+
+    def expand_with_neighbors(
+        self,
+        matches: list[dict[str, Any]],
+        neighbor_count: int = 1,
+    ) -> list[dict[str, Any]]:
+        """Add adjacent chunks from each matched document for answer context.
+
+        Vector similarity finds the best passage, while its neighbouring chunks
+        often contain a definition, qualification, or conclusion required to
+        answer the question accurately.
+        """
+        if not matches or neighbor_count < 1:
+            return matches
+
+        anchors_by_document: dict[str, list[dict[str, Any]]] = {}
+        document_order: list[str] = []
+        for match in matches:
+            metadata = match.get("metadata") or {}
+            document_id = str(metadata.get("document_id") or "")
+            chunk_number = metadata.get("chunk_number")
+            if not document_id or not isinstance(chunk_number, int):
+                continue
+            if document_id not in anchors_by_document:
+                anchors_by_document[document_id] = []
+                document_order.append(document_id)
+            anchors_by_document[document_id].append(match)
+
+        expanded: list[dict[str, Any]] = []
+        for document_id in document_order:
+            anchors = anchors_by_document[document_id]
+            course_id = str((anchors[0].get("metadata") or {}).get("course_id") or "")
+            where = {"document_id": document_id}
+            if course_id:
+                where = {"$and": [{"document_id": document_id}, {"course_id": course_id}]}
+            collection_result = self.collection.get(
+                where=where,
+                include=["documents", "metadatas"],
+            )
+            ids = collection_result.get("ids", [])
+            documents = collection_result.get("documents", [])
+            metadatas = collection_result.get("metadatas", [])
+
+            retrieved_by_id = {str(match["id"]): match for match in anchors}
+            selected_numbers = {
+                number
+                for anchor in anchors
+                for number in range(
+                    int(anchor["metadata"]["chunk_number"]) - neighbor_count,
+                    int(anchor["metadata"]["chunk_number"]) + neighbor_count + 1,
+                )
+            }
+            document_chunks: list[dict[str, Any]] = []
+            for index, item_id in enumerate(ids):
+                metadata = metadatas[index] if index < len(metadatas) else {}
+                chunk_number = metadata.get("chunk_number")
+                if chunk_number not in selected_numbers:
+                    continue
+
+                item_id = str(item_id)
+                if item_id in retrieved_by_id:
+                    document_chunks.append(retrieved_by_id[item_id])
+                    continue
+
+                nearest_anchor = min(
+                    anchors,
+                    key=lambda anchor: abs(
+                        int(anchor["metadata"]["chunk_number"]) - int(chunk_number)
+                    ),
+                )
+                document_chunks.append(
+                    {
+                        "id": item_id,
+                        "text": documents[index] if index < len(documents) else "",
+                        "metadata": metadata,
+                        "score": nearest_anchor.get("score", 0.0),
+                        "distance": nearest_anchor.get("distance", 0.0),
+                        "neighbor_of": nearest_anchor["id"],
+                    }
+                )
+
+            expanded.extend(
+                sorted(
+                    document_chunks,
+                    key=lambda item: int((item.get("metadata") or {}).get("chunk_number", 0)),
+                )
+            )
+
+        return expanded

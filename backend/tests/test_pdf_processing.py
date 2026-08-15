@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 import fitz
 
@@ -54,6 +55,20 @@ class PdfProcessingTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             chunk_pages([], chunk_size=100, overlap=100)
 
+    def test_chunker_keeps_sentences_whole_and_repeats_context(self):
+        text = (
+            "The nephron establishes a salt gradient in the kidney medulla. "
+            "That gradient provides the driving force for water reabsorption. "
+            "Water reabsorption concentrates the urine before it leaves the kidney."
+        )
+
+        chunks = chunk_pages([{"page_number": 7, "text": text}], chunk_size=140, overlap=80)
+
+        self.assertEqual(len(chunks), 2)
+        self.assertTrue(chunks[0]["text"].endswith("reabsorption."))
+        self.assertTrue(chunks[1]["text"].startswith("That gradient"))
+        self.assertIn("Water reabsorption concentrates", chunks[1]["text"])
+
     def test_upload_saves_pdf_and_chunked_json(self):
         with TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -62,16 +77,17 @@ class PdfProcessingTests(unittest.TestCase):
             upload.UPLOAD_DIR = root / "uploads"
             upload.EXTRACTED_DIR = root / "extracted"
             try:
-                result = asyncio.run(
-                    upload.upload_pdf(
-                        UploadFile(
-                            filename="textbook.pdf",
-                            file=BytesIO(make_pdf_bytes("Machine-readable text")),
-                            headers={"content-type": "application/pdf"},
-                        ),
-                        course_id="biology",
+                with patch("app.api.upload.VectorStore"):
+                    result = asyncio.run(
+                        upload.upload_pdf(
+                            UploadFile(
+                                filename="textbook.pdf",
+                                file=BytesIO(make_pdf_bytes("Machine-readable text")),
+                                headers={"content-type": "application/pdf"},
+                            ),
+                            course_id="biology",
+                        )
                     )
-                )
             finally:
                 upload.UPLOAD_DIR = original_upload_directory
                 upload.EXTRACTED_DIR = original_extracted_directory
@@ -85,12 +101,43 @@ class PdfProcessingTests(unittest.TestCase):
         self.assertEqual(result["page_count"], 1)
         self.assertEqual(result["chunk_count"], 1)
         self.assertEqual(processed_document["original_filename"], "textbook.pdf")
+        self.assertTrue(processed_document["document_id"])
         self.assertEqual(processed_document["course_id"], "biology")
         self.assertEqual(processed_document["stored_pdf_path"], str(stored_pdf_path))
         self.assertEqual(processed_document["page_count"], 1)
         self.assertEqual(processed_document["chunk_count"], 1)
         self.assertIn("Machine-readable text", processed_document["pages"][0]["text"])
         self.assertIn("Machine-readable text", processed_document["chunks"][0]["text"])
+        self.assertEqual(
+            set(processed_document["chunks"][0]),
+            {"document_id", "document_name", "course_id", "page_number", "chunk_number", "text"},
+        )
+        self.assertEqual(processed_document["chunks"][0]["document_name"], "textbook.pdf")
+
+    def test_upload_assigns_distinct_document_ids_and_adds_each_document(self):
+        with TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            original_upload_directory = upload.UPLOAD_DIR
+            original_extracted_directory = upload.EXTRACTED_DIR
+            upload.UPLOAD_DIR = root / "uploads"
+            upload.EXTRACTED_DIR = root / "extracted"
+            try:
+                with patch("app.api.upload.VectorStore") as store_class:
+                    results = [
+                        asyncio.run(upload.upload_pdf(UploadFile(filename="chapter.pdf", file=BytesIO(make_pdf_bytes(text)), headers={"content-type": "application/pdf"}), course_id=course))
+                        for text, course in (("Assets and liabilities", "accounting"), ("Cells have membranes", "biology"))
+                    ]
+            finally:
+                upload.UPLOAD_DIR = original_upload_directory
+                upload.EXTRACTED_DIR = original_extracted_directory
+
+        self.assertNotEqual(results[0]["document_id"], results[1]["document_id"])
+        self.assertEqual(store_class.return_value.add_chunks.call_count, 2)
+        first_chunks = store_class.return_value.add_chunks.call_args_list[0].args[0]
+        second_chunks = store_class.return_value.add_chunks.call_args_list[1].args[0]
+        self.assertEqual(first_chunks[0]["course_id"], "accounting")
+        self.assertEqual(second_chunks[0]["course_id"], "biology")
+        self.assertNotEqual(first_chunks[0]["id"], second_chunks[0]["id"])
 
 
 if __name__ == "__main__":

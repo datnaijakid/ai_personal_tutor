@@ -9,6 +9,7 @@ backend/uploads/
 backend/extracted/
 backend/tmp_chroma_test/
 chroma_db/
+backend/tutor.db
 
 # Environment variables
 .env

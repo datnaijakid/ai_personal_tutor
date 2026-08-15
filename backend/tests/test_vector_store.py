@@ -5,10 +5,42 @@ from pathlib import Path
 from unittest.mock import patch
 
 from app.api.chat import ChatRequest, chat_endpoint
+from app.services.chunker import chunk_pages
 from app.services.vector_store import VectorStore
 
 
+class StubEmbeddingService:
+    def embed(self, texts):
+        return [[0.1, 0.2, 0.3] for _ in texts]
+
+
+class ContextEmbeddingService:
+    """Small deterministic embedding for a retrieval regression test."""
+
+    def embed(self, texts):
+        vocabulary = ("gradient", "reabsorption", "urine")
+        return [
+            [float(text.lower().count(term)) for term in vocabulary]
+            for text in texts
+        ]
+
+
+class NeighborEmbeddingService:
+    def embed(self, texts):
+        return [[float("target" in text.lower())] for text in texts]
+
+
 class VectorStoreTests(unittest.TestCase):
+    def setUp(self):
+        self.embedding_service_patcher = patch(
+            "app.services.vector_store.get_embedding_service",
+            return_value=StubEmbeddingService(),
+        )
+        self.embedding_service_patcher.start()
+
+    def tearDown(self):
+        self.embedding_service_patcher.stop()
+
     def test_store_adds_and_queries_chunks(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             store = VectorStore(persist_directory=str(Path(temp_dir) / "chroma_db"))
@@ -33,6 +65,11 @@ class VectorStoreTests(unittest.TestCase):
         self.assertTrue(results)
         self.assertEqual(results[0]["id"], "chunk_13")
         self.assertIn("document_id", results[0]["metadata"])
+        self.assertEqual(results[0]["metadata"]["document_name"], "Chapter 1 slides.pdf")
+        self.assertEqual(
+            set(results[0]["metadata"]),
+            {"document_id", "document_name", "course_id", "page_number", "chunk_number", "text"},
+        )
         self.assertEqual(results[0]["metadata"]["page_number"], 13)
         self.assertEqual(results[0]["metadata"]["course_id"], "accounting")
 
@@ -65,6 +102,95 @@ class VectorStoreTests(unittest.TestCase):
         self.assertTrue(results)
         self.assertEqual(results[0]["id"], "accounting_chunk")
         self.assertEqual(results[0]["metadata"]["course_id"], "accounting")
+
+    def test_add_chunks_is_additive_and_document_ids_do_not_collide(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = VectorStore(persist_directory=str(Path(temp_dir) / "chroma_db"))
+            try:
+                store.add_chunks([
+                    {"document_id": "accounting-chapter-1", "course_id": "accounting", "chunk_number": 1, "text": "Assets equal liabilities plus equity."}
+                ])
+                store.add_chunks([
+                    {"document_id": "biology-chapter-1", "course_id": "biology", "chunk_number": 1, "text": "Cells use membranes to regulate transport."}
+                ])
+                accounting = store.search("assets", course_id="accounting")
+                biology = store.search("membranes", course_id="biology")
+            finally:
+                store.close()
+
+        self.assertEqual([result["metadata"]["document_id"] for result in accounting], ["accounting-chapter-1"])
+        self.assertEqual([result["metadata"]["document_id"] for result in biology], ["biology-chapter-1"])
+
+    def test_retrieval_returns_context_for_a_cross_sentence_question(self):
+        text = (
+            "The nephron establishes a salt gradient in the kidney medulla. "
+            "That gradient provides the driving force for water reabsorption. "
+            "Water reabsorption concentrates the urine before it leaves the kidney."
+        )
+        chunks = chunk_pages([{"page_number": 7, "text": text}], chunk_size=140, overlap=80)
+
+        with tempfile.TemporaryDirectory() as temp_dir, patch(
+            "app.services.vector_store.get_embedding_service",
+            return_value=ContextEmbeddingService(),
+        ):
+            store = VectorStore(persist_directory=str(Path(temp_dir) / "chroma_db"))
+            try:
+                store.add_chunks(
+                    [
+                        {
+                            "id": f"kidney_{chunk['chunk_number']}",
+                            "document_id": "kidney-notes",
+                            "document_name": "Kidney notes.pdf",
+                            "course_id": "biology",
+                            **chunk,
+                        }
+                        for chunk in chunks
+                    ]
+                )
+                results = store.search(
+                    "How does the salt gradient enable water reabsorption and concentrate urine?",
+                    top_k=1,
+                    course_id="biology",
+                )
+            finally:
+                store.close()
+
+        self.assertEqual(len(results), 1)
+        self.assertIn("gradient provides", results[0]["text"])
+        self.assertIn("concentrates the urine", results[0]["text"])
+
+    def test_retrieval_expands_a_match_with_adjacent_chunks(self):
+        chunks = [
+            {"id": "notes_1", "text": "The definition introduces the concept.", "chunk_number": 1},
+            {"id": "notes_2", "text": "The target passage explains the mechanism.", "chunk_number": 2},
+            {"id": "notes_3", "text": "The conclusion describes the practical implication.", "chunk_number": 3},
+        ]
+        with tempfile.TemporaryDirectory() as temp_dir, patch(
+            "app.services.vector_store.get_embedding_service",
+            return_value=NeighborEmbeddingService(),
+        ):
+            store = VectorStore(persist_directory=str(Path(temp_dir) / "chroma_db"))
+            try:
+                store.add_chunks(
+                    [
+                        {
+                            "document_id": "notes",
+                            "document_name": "Notes.pdf",
+                            "course_id": "biology",
+                            "page_number": 1,
+                            **chunk,
+                        }
+                        for chunk in chunks
+                    ]
+                )
+                matches = store.search("target", top_k=1, course_id="biology")
+                expanded = store.expand_with_neighbors(matches)
+            finally:
+                store.close()
+
+        self.assertEqual([chunk["id"] for chunk in matches], ["notes_2"])
+        self.assertEqual([chunk["id"] for chunk in expanded], ["notes_1", "notes_2", "notes_3"])
+        self.assertEqual(expanded[0]["neighbor_of"], "notes_2")
 
     def test_chat_endpoint_returns_relevant_sources(self):
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -112,12 +238,48 @@ class VectorStoreTests(unittest.TestCase):
 
         with patch("app.rag.retrieve_relevant_chunks", return_value=results), patch(
             "app.rag.LocalLLMClient.generate",
-            return_value="The company had strong operating cash flow according to the financial statements.",
+            return_value="Financial statements show the company had strong operating cash flow.",
         ), patch("app.rag.LocalLLMClient.is_available", return_value=True):
             response = build_answer("What does the cash flow say?")
 
         self.assertIn("strong operating cash flow", response["answer"].lower())
         self.assertIn("Chapter 1 slides.pdf", response["sources"][0])
+
+    def test_build_answer_returns_i_dont_know_when_model_reports_insufficient_context(self):
+        results = [
+            {
+                "id": "chunk_1",
+                "text": "Photosynthesis converts light energy into chemical energy.",
+                "metadata": {"document_id": "Biology.pdf", "page_number": 4},
+                "score": 0.91,
+            }
+        ]
+
+        with patch("app.rag.retrieve_relevant_chunks", return_value=results), patch(
+            "app.rag.LocalLLMClient.generate", return_value="INSUFFICIENT_CONTEXT"
+        ), patch("app.rag.LocalLLMClient.is_available", return_value=True):
+            response = build_answer("What is the capital of France?")
+
+        self.assertEqual(response["answer"], "I don't know based on the uploaded material.")
+        self.assertEqual(response["sources"], [])
+
+    def test_build_answer_rejects_an_unsupported_model_claim(self):
+        results = [
+            {
+                "id": "chunk_1",
+                "text": "Photosynthesis converts light energy into chemical energy.",
+                "metadata": {"document_id": "Biology.pdf", "page_number": 4},
+                "score": 0.91,
+            }
+        ]
+
+        with patch("app.rag.retrieve_relevant_chunks", return_value=results), patch(
+            "app.rag.LocalLLMClient.generate", return_value="Paris is the capital of France."
+        ), patch("app.rag.LocalLLMClient.is_available", return_value=True):
+            response = build_answer("What is the capital of France?")
+
+        self.assertEqual(response["answer"], "I don't know based on the uploaded material.")
+        self.assertEqual(response["sources"], [])
 
     def test_build_answer_returns_no_sources_for_irrelevant_chunks(self):
         results = [
@@ -133,7 +295,7 @@ class VectorStoreTests(unittest.TestCase):
             vector_store.return_value.search.return_value = results
             response = build_answer("What is the capital of France?")
 
-        self.assertIn("couldn", response["answer"].lower())
+        self.assertEqual(response["answer"], "I don't know based on the uploaded material.")
         self.assertEqual(response["sources"], [])
 
 

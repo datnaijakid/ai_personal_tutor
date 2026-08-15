@@ -1,11 +1,16 @@
 "use client";
 
-import { FormEvent, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import ChatWidget, { type Message } from "@/components/ChatWidget";
 import PDFUploader from "@/components/PDFUploader";
+import DocumentManager from "@/components/DocumentManager";
 
-type CourseFile = { id: string; name: string };
-type Course = { id: string; name: string; files: CourseFile[]; messages: Message[] };
+type Course = { id: string; name: string; messages: Message[] };
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").trim();
+
+function apiUrl(path: string) {
+  return API_BASE_URL ? new URL(path, API_BASE_URL).toString() : path;
+}
 
 const styles = {
   page: { width: "100%", maxWidth: "1320px", margin: "0 auto", padding: "3rem 1.5rem 4rem", display: "flex", flexDirection: "column" as const, gap: "2rem" },
@@ -24,34 +29,59 @@ const styles = {
 };
 
 export default function Home() {
-  const [courses, setCourses] = useState<Course[]>([{ id: "first-course", name: "Untitled course", files: [], messages: [] }]);
+  const [courses, setCourses] = useState<Course[]>([{ id: "first-course", name: "Untitled course", messages: [] }]);
   const [activeCourseId, setActiveCourseId] = useState("first-course");
   const [showNewCourseForm, setShowNewCourseForm] = useState(false);
   const [newCourseName, setNewCourseName] = useState("");
   const [editingCourseName, setEditingCourseName] = useState(false);
   const [courseNameDraft, setCourseNameDraft] = useState("");
+  const [documentRefresh, setDocumentRefresh] = useState(0);
   const courseTabsRef = useRef<HTMLDivElement>(null);
   const activeCourse = courses.find((course) => course.id === activeCourseId) ?? courses[0];
+
+  useEffect(() => {
+    async function loadCourses() {
+      const response = await fetch(apiUrl("/courses"));
+      if (!response.ok) return;
+      const stored = (await response.json()).courses as { course_id: string; name: string }[];
+      if (stored.length) {
+        setCourses(stored.map((course) => ({ id: course.course_id, name: course.name, messages: [] })));
+        setActiveCourseId(stored[0].course_id);
+      } else {
+        const course = { id: "first-course", name: "Untitled course", messages: [] };
+        const createResponse = await fetch(apiUrl("/courses"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ course_id: course.id, name: course.name }) });
+        if (!createResponse.ok) return;
+        setCourses([course]);
+        setActiveCourseId(course.id);
+      }
+    }
+    void loadCourses();
+  }, []);
 
   function updateActiveCourse(update: (course: Course) => Course) {
     setCourses((current) => current.map((course) => course.id === activeCourseId ? update(course) : course));
   }
 
-  function createCourse(event: FormEvent<HTMLFormElement>) {
+  async function createCourse(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = newCourseName.trim();
     if (!name) return;
-    const course: Course = { id: crypto.randomUUID(), name, files: [], messages: [] };
+    const course: Course = { id: crypto.randomUUID(), name, messages: [] };
+    const response = await fetch(apiUrl("/courses"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ course_id: course.id, name }) });
+    if (!response.ok) return;
     setCourses((current) => [...current, course]);
     setActiveCourseId(course.id);
     setNewCourseName("");
     setShowNewCourseForm(false);
   }
 
-  function saveCourseName(event: FormEvent<HTMLFormElement>) {
+  async function saveCourseName(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = courseNameDraft.trim();
     if (!name) return;
+    if (!activeCourse) return;
+    const response = await fetch(apiUrl(`/courses/${encodeURIComponent(activeCourse.id)}`), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ course_id: activeCourse.id, name }) });
+    if (!response.ok) return;
     updateActiveCourse((course) => ({ ...course, name }));
     setEditingCourseName(false);
   }
@@ -76,7 +106,7 @@ export default function Home() {
           {courses.map((course) => <button key={course.id} type="button" onClick={() => setActiveCourseId(course.id)} style={{ flex: "0 0 auto", border: 0, borderRadius: "999px", padding: "0.65rem 1rem", background: course.id === activeCourseId ? "#eff6ff" : "rgba(255,255,255,0.42)", color: "#0f172a", fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>{course.name}</button>)}
         </div>
         <button type="button" onClick={() => scrollCourses("right")} aria-label="Show more courses" style={{ border: 0, borderRadius: "50%", width: "32px", height: "32px", background: "rgba(255,255,255,0.7)", color: "#1e3a8a", cursor: "pointer" }}>›</button>
-        <button type="button" onClick={() => { setCourseNameDraft(activeCourse.name); setEditingCourseName(true); }} aria-label="Edit active course name" title="Edit course name" style={{ border: 0, background: "transparent", color: "#1e3a8a", fontSize: "1.1rem", cursor: "pointer", padding: "0.4rem" }}>✎</button>
+        <button type="button" disabled={!activeCourse} onClick={() => { if (activeCourse) { setCourseNameDraft(activeCourse.name); setEditingCourseName(true); } }} aria-label="Edit active course name" title="Edit course name" style={{ border: 0, background: "transparent", color: "#1e3a8a", fontSize: "1.1rem", cursor: "pointer", padding: "0.4rem" }}>✎</button>
         <button type="button" onClick={() => setShowNewCourseForm(true)} style={{ border: 0, background: "transparent", color: "#1e3a8a", fontWeight: 700, cursor: "pointer", padding: "0.65rem" }}>+ Add a course</button>
       </section>
 
@@ -98,24 +128,15 @@ export default function Home() {
         </form>
       </section>}
 
-      <section style={styles.panelGrid}>
+      {activeCourse && <section style={styles.panelGrid}>
         <div className="course-upload-panel" style={{ ...styles.leftPanel, minWidth: 0 }}><div style={styles.cardShell}><div style={styles.cardHeader}><h2 style={styles.cardTitle}>Textbook upload</h2></div><div style={styles.cardBody}>
-          <PDFUploader key={activeCourse.id} courseId={activeCourse.id} onUploadComplete={(fileName) => updateActiveCourse((course) => ({ ...course, files: [...course.files, { id: crypto.randomUUID(), name: fileName }] }))} />
-          <section style={{ marginTop: "1.25rem" }} aria-label="Uploaded PDFs">
-            <span style={{ display: "inline-block", padding: "0.35rem 0.7rem", borderRadius: "999px", background: "#dbeafe", color: "#1e3a8a", fontSize: "0.82rem", fontWeight: 700 }}>Uploaded PDFs</span>
-            {activeCourse.files.length === 0 ? (
-              <p style={{ margin: "0.75rem 0 0", color: "#64748b", fontSize: "0.9rem" }}>No PDFs uploaded yet.</p>
-            ) : (
-              <div style={{ display: "grid", gap: "0.55rem", marginTop: "0.75rem" }}>
-                {activeCourse.files.map((file) => <div key={file.id} title={file.name} style={{ display: "flex", gap: "0.55rem", alignItems: "flex-start", minWidth: 0, padding: "0.7rem 0.75rem", borderRadius: "12px", background: "#eff6ff", color: "#1e3a8a", fontSize: "0.9rem", overflowWrap: "anywhere" }}><span aria-hidden="true">📄</span><span>{file.name}</span></div>)}
-              </div>
-            )}
-          </section>
+          <PDFUploader key={activeCourse.id} courseId={activeCourse.id} onUploadComplete={() => setDocumentRefresh((value) => value + 1)} />
+          <DocumentManager courseId={activeCourse.id} refreshKey={documentRefresh} />
         </div></div></div>
         <div className="course-chat-panel" style={{ ...styles.rightPanel, minWidth: 0 }}><div style={styles.cardShell}><div style={styles.cardHeader}><h2 style={styles.cardTitle}>Chat with Professor DOTU</h2></div><div style={styles.cardBody}>
           <ChatWidget key={activeCourse.id} courseId={activeCourse.id} messages={activeCourse.messages} onMessagesChange={(messages) => updateActiveCourse((course) => ({ ...course, messages }))} />
         </div></div></div>
-      </section>
+      </section>}
     </main>
   );
 }

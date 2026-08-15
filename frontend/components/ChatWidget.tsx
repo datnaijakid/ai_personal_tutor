@@ -7,8 +7,10 @@ const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").trim();
 export type Message = {
   role: "user" | "assistant";
   text: string;
-  sources?: string[];
+  sources?: Source[];
 };
+
+export type Source = { document: string; document_id: string; page: number; chunk_id: string };
 
 const bubbleStyles: Record<string, React.CSSProperties> = {
   container: {
@@ -100,9 +102,16 @@ type ChatWidgetProps = {
   onMessagesChange: (messages: Message[]) => void;
 };
 
+function documentUrl(source: Source, courseId: string) {
+  return `/documents/${encodeURIComponent(source.document_id)}/file?course_id=${encodeURIComponent(courseId)}#page=${source.page}`;
+}
+
 export default function ChatWidget({ courseId, messages, onMessagesChange }: ChatWidgetProps) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [previewSource, setPreviewSource] = useState<Source | null>(null);
+  const conversationCourseId = useRef(courseId);
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -122,9 +131,17 @@ export default function ChatWidget({ courseId, messages, onMessagesChange }: Cha
       const res = await fetch(chatUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: text, course_id: courseId }),
+        body: JSON.stringify({
+          question: text,
+          course_id: courseId,
+          conversation_id: conversationCourseId.current === courseId ? conversationId : null,
+        }),
       });
       const data = await res.json();
+      if (data?.conversation_id) {
+        conversationCourseId.current = courseId;
+        setConversationId(data.conversation_id);
+      }
       const assistant: Message = { role: "assistant", text: data?.answer || "(no answer)", sources: data?.sources || [] };
       onMessagesChange([...messages, userMsg, assistant]);
     } catch {
@@ -136,6 +153,8 @@ export default function ChatWidget({ courseId, messages, onMessagesChange }: Cha
 
   function clearChat() {
     onMessagesChange([]);
+    conversationCourseId.current = courseId;
+    setConversationId(null);
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -161,13 +180,19 @@ export default function ChatWidget({ courseId, messages, onMessagesChange }: Cha
               gap: "0.4rem",
             }}
           >
-            <div style={m.role === "user" ? bubbleStyles.bubbleUser : bubbleStyles.bubbleAssistant}>{m.text}</div>
+            <div style={m.role === "user" ? bubbleStyles.bubbleUser : bubbleStyles.bubbleAssistant}>
+              {m.role === "assistant" ? m.text.split(/(\[p\.\d+\])/g).map((part, partIndex) => {
+                const page = Number(part.match(/^\[p\.(\d+)\]$/)?.[1]);
+                const source = m.sources?.find((item) => item.page === page);
+                return source ? <button key={partIndex} type="button" onClick={() => setPreviewSource(source)} style={{ color: "#0c4a6e", fontWeight: 800, textDecoration: "underline", border: 0, background: "transparent", cursor: "pointer", padding: 0 }}>{part}</button> : part;
+              }) : m.text}
+            </div>
             {m.sources && m.sources.length > 0 && (
               <div style={bubbleStyles.sources}>
                 <strong>Sources:</strong>
                 <ul style={{ margin: "0.25rem 0 0 0.75rem" }}>
-                  {m.sources.map((s, idx) => (
-                    <li key={idx}>{s}</li>
+                  {m.sources.map((source) => (
+                    <li key={source.chunk_id}><button type="button" onClick={() => setPreviewSource(source)} style={{ color: "#075985", textDecoration: "underline", border: 0, background: "transparent", cursor: "pointer", padding: 0 }}>{source.document}, Page {source.page}</button></li>
                   ))}
                 </ul>
               </div>
@@ -176,6 +201,10 @@ export default function ChatWidget({ courseId, messages, onMessagesChange }: Cha
         ))}
         <div ref={endRef} />
       </div>
+      {previewSource && <div role="dialog" aria-modal="true" aria-label={`Preview ${previewSource.document}`} style={{ position: "fixed", inset: 0, zIndex: 50, background: "rgba(15,23,42,0.72)", padding: "4vh 5vw", display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", color: "white", fontWeight: 700 }}><span>{previewSource.document} — Page {previewSource.page}</span><button type="button" onClick={() => setPreviewSource(null)}>Close</button></div>
+        <iframe title={`${previewSource.document} page ${previewSource.page}`} src={documentUrl(previewSource, courseId)} style={{ width: "100%", flex: 1, minHeight: 0, border: 0, background: "white" }} />
+      </div>}
 
       <div style={{ marginTop: "0.5rem" }}>
         <div style={bubbleStyles.formRow}>
