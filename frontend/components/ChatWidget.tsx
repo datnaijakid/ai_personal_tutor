@@ -1,6 +1,9 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import QuizWidget from "@/components/QuizWidget";
+import FlashcardWidget from "@/components/FlashcardWidget";
+import SummaryWidget from "@/components/SummaryWidget";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "").trim();
 
@@ -15,6 +18,9 @@ export type Source = { document: string; document_id: string; page: number; chun
 const bubbleStyles: Record<string, React.CSSProperties> = {
   container: {
     width: "100%",
+    flex: 1,
+    minHeight: 0,
+    position: "relative",
     display: "flex",
     flexDirection: "column",
     gap: "1rem",
@@ -33,10 +39,11 @@ const bubbleStyles: Record<string, React.CSSProperties> = {
     color: "#0f172a",
   },
   messages: {
+    flex: 1,
+    minHeight: 0,
     display: "flex",
     flexDirection: "column",
     gap: "0.75rem",
-    maxHeight: "420px",
     overflowY: "auto",
     padding: "0.25rem",
   },
@@ -74,7 +81,7 @@ const bubbleStyles: Record<string, React.CSSProperties> = {
   textarea: {
     flex: 1,
     minHeight: "80px",
-    padding: "0.6rem",
+    padding: "0.6rem 0.6rem 0.6rem 3.35rem",
     borderRadius: "10px",
     border: "1px solid rgba(2,6,23,0.06)",
     background: "#e6f7ff",
@@ -100,17 +107,21 @@ type ChatWidgetProps = {
   courseId: string;
   messages: Message[];
   onMessagesChange: (messages: Message[]) => void;
+  conversationId: string | null;
+  onConversationChange: (conversationId: string | null) => void;
+  onConversationSaved: () => void;
 };
 
 function documentUrl(source: Source, courseId: string) {
   return `/documents/${encodeURIComponent(source.document_id)}/file?course_id=${encodeURIComponent(courseId)}#page=${source.page}`;
 }
 
-export default function ChatWidget({ courseId, messages, onMessagesChange }: ChatWidgetProps) {
+export default function ChatWidget({ courseId, messages, onMessagesChange, conversationId, onConversationChange, onConversationSaved }: ChatWidgetProps) {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const [conversationId, setConversationId] = useState<string | null>(null);
   const [previewSource, setPreviewSource] = useState<Source | null>(null);
+  const [showModes, setShowModes] = useState(false);
+  const [mode, setMode] = useState<"chat" | "quiz" | "flashcards" | "summary">("chat");
   const conversationCourseId = useRef(courseId);
   const endRef = useRef<HTMLDivElement | null>(null);
 
@@ -121,6 +132,7 @@ export default function ChatWidget({ courseId, messages, onMessagesChange }: Cha
   async function sendMessage() {
     const text = input.trim();
     if (!text) return;
+    setMode("chat");
     const userMsg: Message = { role: "user", text };
     onMessagesChange([...messages, userMsg]);
     setInput("");
@@ -140,7 +152,8 @@ export default function ChatWidget({ courseId, messages, onMessagesChange }: Cha
       const data = await res.json();
       if (data?.conversation_id) {
         conversationCourseId.current = courseId;
-        setConversationId(data.conversation_id);
+        onConversationChange(data.conversation_id);
+        onConversationSaved();
       }
       const assistant: Message = { role: "assistant", text: data?.answer || "(no answer)", sources: data?.sources || [] };
       onMessagesChange([...messages, userMsg, assistant]);
@@ -154,7 +167,7 @@ export default function ChatWidget({ courseId, messages, onMessagesChange }: Cha
   function clearChat() {
     onMessagesChange([]);
     conversationCourseId.current = courseId;
-    setConversationId(null);
+    onConversationChange(null);
   }
 
   function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
@@ -164,8 +177,38 @@ export default function ChatWidget({ courseId, messages, onMessagesChange }: Cha
     }
   }
 
+  const chatComposer = <div style={{ marginTop: "0.5rem" }}>
+    <div style={bubbleStyles.formRow}>
+      <textarea
+        style={bubbleStyles.textarea}
+        value={input}
+        onChange={(e) => setInput(e.target.value)}
+        onKeyDown={onKeyDown}
+        placeholder="Type your question and press Enter to send"
+      />
+      <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+        <button style={bubbleStyles.button} onClick={sendMessage} disabled={loading}>
+          {loading ? <span className="typing-indicator" aria-label="Professor DOTU is typing"><i /><i /><i /></span> : "Send"}
+        </button>
+        <button style={{ ...bubbleStyles.button, ...bubbleStyles.clear }} onClick={clearChat}>
+          Clear
+        </button>
+      </div>
+    </div>
+  </div>;
+
   return (
     <div style={bubbleStyles.container}>
+      <div style={{ position: "absolute", left: "1.6rem", bottom: "1.7rem", zIndex: 3 }}>
+        {showModes && <div style={{ position: "absolute", left: 0, bottom: "3.25rem", display: "flex", flexDirection: "column", gap: "0.55rem", alignItems: "flex-start", zIndex: 2 }}>
+          <button type="button" onClick={() => { setMode("quiz"); setShowModes(false); }} style={{ minWidth: "142px", border: 0, borderRadius: "999px", padding: "0.65rem 1.2rem", background: "#3b82f6", color: "white", boxShadow: "0 8px 20px rgba(37,99,235,0.28)", fontWeight: 700, cursor: "pointer" }}>Quiz me</button>
+          <button type="button" onClick={() => { setMode("flashcards"); setShowModes(false); }} style={{ minWidth: "142px", border: 0, borderRadius: "999px", padding: "0.65rem 1.2rem", background: "#3b82f6", color: "white", boxShadow: "0 8px 20px rgba(37,99,235,0.28)", fontWeight: 700, cursor: "pointer" }}>Flashcards</button>
+          <button type="button" onClick={() => { setMode("summary"); setShowModes(false); }} style={{ minWidth: "142px", border: 0, borderRadius: "999px", padding: "0.65rem 1.2rem", background: "#3b82f6", color: "white", boxShadow: "0 8px 20px rgba(37,99,235,0.28)", fontWeight: 700, cursor: "pointer" }}>Summarize</button>
+          <button type="button" onClick={() => { setMode("chat"); setShowModes(false); }} style={{ minWidth: "142px", border: 0, borderRadius: "999px", padding: "0.65rem 1.2rem", background: "#3b82f6", color: "white", boxShadow: "0 8px 20px rgba(37,99,235,0.28)", fontWeight: 700, cursor: "pointer" }}>Chat mode</button>
+        </div>}
+        <button type="button" onClick={() => setShowModes((visible) => !visible)} aria-label="Choose a study mode" aria-expanded={showModes} style={{ width: "42px", height: "42px", border: 0, borderRadius: "50%", background: "#1d4ed8", color: "white", fontSize: "1.6rem", lineHeight: 1, boxShadow: "0 8px 20px rgba(37,99,235,0.35)", cursor: "pointer" }}>{showModes ? "×" : "+"}</button>
+      </div>
+      {mode === "quiz" ? <><div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}><QuizWidget key={courseId} courseId={courseId} /></div>{chatComposer}</> : mode === "flashcards" ? <><div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}><FlashcardWidget key={courseId} courseId={courseId} /></div>{chatComposer}</> : mode === "summary" ? <><div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}><SummaryWidget key={courseId} courseId={courseId} /></div>{chatComposer}</> : <>
       <div style={bubbleStyles.messages}>
         {messages.length === 0 && (
           <div style={bubbleStyles.bubbleAssistant}>Hi — upload a textbook and ask me about the course material.</div>
@@ -206,25 +249,8 @@ export default function ChatWidget({ courseId, messages, onMessagesChange }: Cha
         <iframe title={`${previewSource.document} page ${previewSource.page}`} src={documentUrl(previewSource, courseId)} style={{ width: "100%", flex: 1, minHeight: 0, border: 0, background: "white" }} />
       </div>}
 
-      <div style={{ marginTop: "0.5rem" }}>
-        <div style={bubbleStyles.formRow}>
-          <textarea
-            style={bubbleStyles.textarea}
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={onKeyDown}
-            placeholder="Type your question and press Enter to send"
-          />
-          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
-            <button style={bubbleStyles.button} onClick={sendMessage} disabled={loading}>
-              {loading ? <span className="typing-indicator" aria-label="Professor DOTU is typing"><i /><i /><i /></span> : "Send"}
-            </button>
-            <button style={{ ...bubbleStyles.button, ...bubbleStyles.clear }} onClick={clearChat}>
-              Clear
-            </button>
-          </div>
-        </div>
-      </div>
+      {chatComposer}
+      </>}
     </div>
   );
 }

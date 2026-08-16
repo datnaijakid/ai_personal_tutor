@@ -7,6 +7,10 @@ from app.api.upload import router as upload_router
 from app.api.chat import router as chat_router
 from app.api.documents import router as documents_router
 from app.api.courses import router as courses_router
+from app.api.quiz import router as quiz_router
+from app.api.flashcards import router as flashcards_router
+from app.api.summary import router as summary_router
+from app.api.conversations import router as conversations_router
 
 
 app = FastAPI()
@@ -35,3 +39,7 @@ app.include_router(search_router)
 app.include_router(chat_router)
 app.include_router(documents_router)
 app.include_router(courses_router)
+app.include_router(quiz_router)
+app.include_router(flashcards_router)
+app.include_router(summary_router)
+app.include_router(conversations_router)

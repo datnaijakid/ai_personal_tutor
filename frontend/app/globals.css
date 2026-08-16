@@ -27,7 +27,8 @@ body {
 
 @media (max-width: 800px) {
   .course-upload-panel,
-  .course-chat-panel {
+  .course-chat-panel,
+  .course-history-panel {
     grid-column: 1 / -1 !important;
   }
 }
@@ -73,4 +74,18 @@ body {
 
 .typing-indicator i:nth-child(3) {
   animation-delay: 0.3s;
+}
+
+@keyframes confetti-fall {
+  0% { transform: translateY(-18px) rotate(0deg); opacity: 1; }
+  100% { transform: translateY(270px) rotate(540deg); opacity: 0; }
+}
+
+.quiz-confetti {
+  position: absolute;
+  top: 0;
+  width: 9px;
+  height: 14px;
+  border-radius: 2px;
+  animation: confetti-fall 1.5s ease-out forwards;
 }

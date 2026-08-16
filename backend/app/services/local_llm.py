@@ -69,3 +69,75 @@ class LocalLLMClient:
             return (result.get("response") or "").strip()
         except json.JSONDecodeError:
             return ""
+
+    def generate_quiz(self, context: str, topic: str | None = None) -> str:
+        topic_instruction = f"Focus on: {topic}." if topic else "Choose the most teachable definition or concept."
+        prompt = (
+            "You create one multiple-choice quiz question using ONLY the TEXTBOOK CONTEXT below. "
+            "Do not use outside knowledge. The correct answer and explanation must be directly supported by the context. "
+            "Create three plausible but clearly incorrect distractors. "
+            f"{topic_instruction}\n\n"
+            "Return valid JSON only, with this exact shape:\n"
+            '{"question":"...","options":["...","...","...","..."],"correct_option":0,"explanation":"..."}\n\n'
+            "TEXTBOOK CONTEXT:\n"
+            f"{context}"
+        )
+        payload = {
+            "model": self.model,
+            "prompt": prompt,
+            "stream": False,
+            "format": "json",
+            "options": {"temperature": 0.1, "top_p": 0.9},
+        }
+        data = json.dumps(payload).encode("utf-8")
+        req = request.Request(
+            f"{self.base_url}/api/generate",
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with request.urlopen(req, timeout=120) as response:
+                body = response.read().decode("utf-8")
+            return (json.loads(body).get("response") or "").strip()
+        except (error.URLError, TimeoutError, OSError, json.JSONDecodeError):
+            return ""
+
+    def generate_flashcard(self, context: str, topic: str | None = None) -> str:
+        topic_instruction = f"Focus on: {topic}." if topic else "Choose one important definition or concept."
+        prompt = (
+            "You create one study flashcard using ONLY the TEXTBOOK CONTEXT below. "
+            "Do not use outside knowledge. The back must be fully supported by the context. "
+            f"{topic_instruction}\n\n"
+            "Return valid JSON only in this exact shape:\n"
+            '{"front":"a concise question","back":"a concise textbook-grounded answer"}\n\n'
+            "TEXTBOOK CONTEXT:\n"
+            f"{context}"
+        )
+        payload = {"model": self.model, "prompt": prompt, "stream": False, "format": "json", "options": {"temperature": 0.1, "top_p": 0.9}}
+        data = json.dumps(payload).encode("utf-8")
+        req = request.Request(f"{self.base_url}/api/generate", data=data, headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with request.urlopen(req, timeout=120) as response:
+                body = response.read().decode("utf-8")
+            return (json.loads(body).get("response") or "").strip()
+        except (error.URLError, TimeoutError, OSError, json.JSONDecodeError):
+            return ""
+
+    def generate_summary(self, context: str, topic: str) -> str:
+        prompt = (
+            "You create a clear, student-friendly chapter summary using ONLY the TEXTBOOK CONTEXT below. "
+            "Do not use outside knowledge or invent information. Return 4 to 8 concise points that cover the important ideas.\n\n"
+            "Return valid JSON only in this exact shape:\n"
+            '{"title":"Chapter summary title","points":["important idea 1","important idea 2"]}\n\n'
+            f"CHAPTER OR TOPIC: {topic}\n\nTEXTBOOK CONTEXT:\n{context}"
+        )
+        payload = {"model": self.model, "prompt": prompt, "stream": False, "format": "json", "options": {"temperature": 0.15, "top_p": 0.9}}
+        data = json.dumps(payload).encode("utf-8")
+        req = request.Request(f"{self.base_url}/api/generate", data=data, headers={"Content-Type": "application/json"}, method="POST")
+        try:
+            with request.urlopen(req, timeout=120) as response:
+                body = response.read().decode("utf-8")
+            return (json.loads(body).get("response") or "").strip()
+        except (error.URLError, TimeoutError, OSError, json.JSONDecodeError):
+            return ""

@@ -65,6 +65,7 @@ class TutorDatabase:
                     conversation_id TEXT PRIMARY KEY,
                     course_id TEXT NOT NULL,
                     created_at TEXT NOT NULL,
+                    title TEXT NOT NULL DEFAULT '',
                     FOREIGN KEY (course_id) REFERENCES course(course_id)
                 );
 
@@ -87,6 +88,9 @@ class TutorDatabase:
                 connection.execute("ALTER TABLE document ADD COLUMN stored_filename TEXT NOT NULL DEFAULT ''")
             if "processed_path" not in existing_columns:
                 connection.execute("ALTER TABLE document ADD COLUMN processed_path TEXT NOT NULL DEFAULT ''")
+            conversation_columns = {row[1] for row in connection.execute("PRAGMA table_info(conversation)")}
+            if "title" not in conversation_columns:
+                connection.execute("ALTER TABLE conversation ADD COLUMN title TEXT NOT NULL DEFAULT ''")
             schema = connection.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'document'").fetchone()[0] or ""
             if "CHECK (status IN ('indexing', 'indexed', 'failed'))" in schema:
                 connection.executescript(
@@ -227,6 +231,57 @@ class TutorDatabase:
                 (conversation_id,),
             ).fetchall()
         return [dict(row) for row in rows]
+
+    def list_conversations(self, course_id: str) -> list[dict[str, str]]:
+        """Return the newest conversations with a human-readable title."""
+        with self._connection() as connection:
+            rows = connection.execute(
+                """
+                SELECT conversation.conversation_id, conversation.created_at,
+                    COALESCE(NULLIF(conversation.title, ''), (SELECT content FROM message
+                        WHERE message.conversation_id = conversation.conversation_id
+                          AND role = 'user'
+                        ORDER BY timestamp LIMIT 1), 'New conversation') AS title,
+                    COUNT(message.message_id) AS message_count
+                FROM conversation
+                LEFT JOIN message ON message.conversation_id = conversation.conversation_id
+                WHERE conversation.course_id = ?
+                GROUP BY conversation.conversation_id
+                ORDER BY MAX(message.timestamp) DESC, conversation.created_at DESC
+                """,
+                (course_id,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def rename_conversation(self, conversation_id: str, course_id: str, title: str) -> bool:
+        with self._connection() as connection:
+            result = connection.execute(
+                "UPDATE conversation SET title = ? WHERE conversation_id = ? AND course_id = ?",
+                (title.strip(), conversation_id, course_id),
+            )
+        return result.rowcount == 1
+
+    def delete_conversation(self, conversation_id: str, course_id: str) -> bool:
+        with self._connection() as connection:
+            conversation = connection.execute(
+                "SELECT conversation_id FROM conversation WHERE conversation_id = ? AND course_id = ?",
+                (conversation_id, course_id),
+            ).fetchone()
+            if conversation is None:
+                return False
+            connection.execute("DELETE FROM message WHERE conversation_id = ?", (conversation_id,))
+            connection.execute("DELETE FROM conversation WHERE conversation_id = ?", (conversation_id,))
+        return True
+
+    def get_conversation(self, conversation_id: str, course_id: str) -> list[dict[str, str]] | None:
+        with self._connection() as connection:
+            conversation = connection.execute(
+                "SELECT conversation_id FROM conversation WHERE conversation_id = ? AND course_id = ?",
+                (conversation_id, course_id),
+            ).fetchone()
+        if conversation is None:
+            return None
+        return self.get_messages(conversation_id)
 
 
 _database: TutorDatabase | None = None

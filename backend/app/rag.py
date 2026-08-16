@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from app.services.local_llm import LocalLLMClient
@@ -138,3 +139,139 @@ def build_answer(
         "answer": fallback,
         "sources": sources,
     }
+
+
+def build_quiz_question(course_id: str, topic: str | None = None) -> dict[str, Any] | str | None:
+    """Generate a quiz only after course-scoped textbook retrieval succeeds."""
+    retrieval_query = topic.strip() if topic and topic.strip() else "important concepts, definitions, and key ideas"
+    results = retrieve_relevant_chunks(retrieval_query, top_k=3, course_id=course_id)
+    if not results:
+        return None
+
+    # Use retrieved text as the model's entire knowledge boundary and retain the
+    # strongest matched chunk as the visible source citation.
+    passages: list[str] = []
+    seen: set[str] = set()
+    source: dict[str, Any] | None = None
+    for result in results:
+        text = (result.get("text") or "").strip()
+        if not text or " ".join(text.split()).casefold() in seen:
+            continue
+        seen.add(" ".join(text.split()).casefold())
+        passages.append(text)
+        if source is None and not result.get("neighbor_of"):
+            metadata = result.get("metadata") or {}
+            source = {
+                "document": metadata.get("document_name") or metadata.get("document_id") or "Uploaded document",
+                "document_id": metadata.get("document_id"),
+                "page": int(metadata.get("page_number") or 0),
+                "chunk_id": result.get("id"),
+            }
+    if not passages or source is None:
+        return None
+    if not LOCAL_LLM.is_available():
+        return "LLM_UNAVAILABLE"
+
+    raw_quiz = LOCAL_LLM.generate_quiz("\n\n".join(passages), topic)
+    try:
+        quiz = json.loads(raw_quiz)
+        question = str(quiz["question"]).strip()
+        options = [str(option).strip() for option in quiz["options"]]
+        correct_option = int(quiz["correct_option"])
+        explanation = str(quiz["explanation"]).strip()
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not question or not explanation or len(options) != 4 or any(not option for option in options) or correct_option not in range(4):
+        return None
+    return {
+        "question": question,
+        "options": options,
+        "correct_option": correct_option,
+        "explanation": explanation,
+        "source": source,
+    }
+
+
+def build_quiz_questions(course_id: str, topics: str | None, question_count: int) -> list[dict[str, Any]] | str | None:
+    """Retrieve each comma-separated topic independently before creating a quiz set."""
+    selected_topics = [topic.strip() for topic in (topics or "").split(",") if topic.strip()] or [None]
+    questions: list[dict[str, Any]] = []
+    for index in range(question_count):
+        question = build_quiz_question(course_id, selected_topics[index % len(selected_topics)])
+        if question in (None, "LLM_UNAVAILABLE"):
+            return question
+        questions.append(question)
+    return questions
+
+
+def build_flashcard(course_id: str, topic: str | None = None) -> dict[str, Any] | str | None:
+    """Generate a flashcard after retrieving course-scoped textbook passages."""
+    retrieval_query = topic.strip() if topic and topic.strip() else "important concepts, definitions, and key ideas"
+    results = retrieve_relevant_chunks(retrieval_query, top_k=3, course_id=course_id)
+    if not results:
+        return None
+
+    passages: list[str] = []
+    seen: set[str] = set()
+    source: dict[str, Any] | None = None
+    for result in results:
+        text = (result.get("text") or "").strip()
+        normalized = " ".join(text.split()).casefold()
+        if not text or normalized in seen:
+            continue
+        seen.add(normalized)
+        passages.append(text)
+        if source is None and not result.get("neighbor_of"):
+            metadata = result.get("metadata") or {}
+            source = {
+                "document": metadata.get("document_name") or metadata.get("document_id") or "Uploaded document",
+                "document_id": metadata.get("document_id"),
+                "page": int(metadata.get("page_number") or 0),
+                "chunk_id": result.get("id"),
+            }
+    if not passages or source is None:
+        return None
+    if not LOCAL_LLM.is_available():
+        return "LLM_UNAVAILABLE"
+    try:
+        card = json.loads(LOCAL_LLM.generate_flashcard("\n\n".join(passages), topic))
+        front = str(card["front"]).strip()
+        back = str(card["back"]).strip()
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not front or not back:
+        return None
+    return {"front": front, "back": back, "source": source}
+
+
+def build_chapter_summary(course_id: str, topic: str) -> dict[str, Any] | str | None:
+    """Retrieve chapter-scoped passages and generate a grounded study summary."""
+    results = retrieve_relevant_chunks(topic, top_k=5, course_id=course_id)
+    if not results:
+        return None
+    passages: list[str] = []
+    seen: set[str] = set()
+    sources: list[dict[str, Any]] = []
+    for result in results:
+        text = (result.get("text") or "").strip()
+        normalized = " ".join(text.split()).casefold()
+        if not text or normalized in seen:
+            continue
+        seen.add(normalized)
+        passages.append(text)
+        if not result.get("neighbor_of") and len(sources) < 3:
+            metadata = result.get("metadata") or {}
+            sources.append({"document": metadata.get("document_name") or metadata.get("document_id") or "Uploaded document", "document_id": metadata.get("document_id"), "page": int(metadata.get("page_number") or 0), "chunk_id": result.get("id")})
+    if not passages or not sources:
+        return None
+    if not LOCAL_LLM.is_available():
+        return "LLM_UNAVAILABLE"
+    try:
+        summary = json.loads(LOCAL_LLM.generate_summary("\n\n".join(passages), topic))
+        title = str(summary["title"]).strip()
+        points = [str(point).strip() for point in summary["points"] if str(point).strip()]
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not title or not 1 <= len(points) <= 8:
+        return None
+    return {"title": title, "points": points, "sources": sources}
